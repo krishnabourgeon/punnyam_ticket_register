@@ -1,5 +1,9 @@
 import 'package:flutter/foundation.dart';
+import 'package:punnyam/models/available_book_model.dart';
 import 'package:punnyam/models/bill_list_response_model.dart';
+import 'package:punnyam/models/book_issue_body.dart';
+import 'package:punnyam/models/book_issue_model.dart';
+import 'package:punnyam/models/book_register_model.dart';
 import 'package:punnyam/models/counter_wise_summary_response.dart';
 import 'package:punnyam/models/counters_model.dart';
 import 'package:punnyam/models/create_customer_body.dart';
@@ -401,6 +405,76 @@ class ServiceConfig {
       return (counterWiseSummaryResponse?.status ?? false)
           ? Result.value(counterWiseSummaryResponse)
           : Result.error(counterWiseSummaryResponse!);
+    }
+  }
+
+  Future<Result> bookRegister({
+    required int poojaId,
+    required String date,
+    required int leafFrom,
+    required int leafTo,
+    required int leafsPerBook,
+  }) async {
+    final body = {
+      "date": date,
+      "pooja_id": poojaId,
+      "leaf_from": leafFrom,
+      "leaf_to": leafTo,
+      "leafs_per_book": leafsPerBook,
+    };
+    Result res = await BaseClient.post('book-register', body: body);
+    if (res.isError) {
+      ErrorResponseModel errorResponseModel =
+          ErrorResponseModel(errorMessage: 'OOps...!, Something went wrong');
+      return Result.error(errorResponseModel);
+    } else {
+      var response = res.asValue!.value;
+      BookRegisterModel bookRegisterModel =
+          BookRegisterModel.fromJson(response);
+      return (bookRegisterModel.status ?? false)
+          ? Result.value(bookRegisterModel)
+          : Result.error(bookRegisterModel);
+    }
+  }
+
+  Future<Result> availableBook({required int poojaId}) async {
+    Result res = await BaseClient.get("book-issue/available?pooja_id=$poojaId");
+    if (res.isError) {
+      ErrorResponseModel errorResponseModel =
+          ErrorResponseModel(errorMessage: "OOps...!, Something went wrong");
+      return Result.error(errorResponseModel);
+    } else {
+      var response = res.asValue!.value;
+      AvailableBookModel availableBookModel =
+          AvailableBookModel.fromJson(response);
+      return (availableBookModel.status)
+          ? Result.value(availableBookModel)
+          : Result.error(availableBookModel);
+    }
+  }
+
+  Future<Result> issueBook({
+     required String date,
+  required int counterId,
+  required List<Map<String, dynamic>> items,
+  }) async {
+    final body = {
+      "date": date,
+      "counter_id": counterId,
+      "items": items,
+    };
+    Result res = await BaseClient.post("book-issue", body: body);
+    if (res.isError) {
+      ErrorResponseModel errorResponseModel =
+          ErrorResponseModel(errorMessage: 'OOps...!, Something went wrong');
+      return Result.error(errorResponseModel);
+    } else {
+      var response = res.asValue!.value;
+      BookIssueModel bookIssueModel =
+          BookIssueModel.fromJson(response);
+      return (bookIssueModel.status ?? false)
+          ? Result.value(bookIssueModel)
+          : Result.error(bookIssueModel);
     }
   }
 }

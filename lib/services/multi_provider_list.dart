@@ -4,6 +4,7 @@ import 'package:punnyam/providers/auth_provider.dart';
 import 'package:punnyam/providers/bill_details_provider.dart';
 import 'package:punnyam/providers/create_cutomer_provider.dart';
 import 'package:punnyam/providers/home_provider.dart';
+import 'package:punnyam/providers/ticket_providetr.dart';
 import '../providers/billing_provider.dart';
 
 class MultiProviderList {
@@ -13,6 +14,7 @@ class MultiProviderList {
     ChangeNotifierProvider(create: (_) => HomeProvider()),
     ChangeNotifierProvider(create: (_) => CreateCustomerProvider()),
     ChangeNotifierProvider(create: (_) => BillDetailprovider()),
+    ChangeNotifierProvider(create: (_) => TicketProvidetr())
     // ChangeNotifierProvider(create: (_) => PreviewBillProvider())
   ];
 }

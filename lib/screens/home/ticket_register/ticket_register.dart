@@ -52,11 +52,30 @@ class _TicketRegisterScreenState extends State<TicketRegisterScreen>
       icon: Icons.menu_book_outlined,
       color: const Color(0xFF6D1A1A),
       bgColor: const Color(0xFFF9E8E8),
-      onTap: () {
-        Navigator.push(
+      onTap: () async {
+        final saved = await Navigator.push(
           context,
           MaterialPageRoute(builder: (_) => const NewBookScreen()),
         );
+        if (saved is String && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              behavior: SnackBarBehavior.floating,
+              backgroundColor: const Color(0xFF6D1A1A),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              content: Text(
+                saved,
+                style: GoogleFonts.poppins(
+                  color: Colors.white,
+                  fontSize: 14.sp,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          );
+        }
       },
     ),
     // _CardItem(

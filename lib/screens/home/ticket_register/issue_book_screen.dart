@@ -2,6 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
+import 'package:punnyam/common/common_functions.dart';
+import 'package:punnyam/models/available_book_model.dart';
+import 'package:punnyam/models/counters_model.dart';
+import 'package:punnyam/models/pooja_response_model.dart';
+import 'package:punnyam/providers/billing_provider.dart';
+import 'package:punnyam/providers/home_provider.dart';
+import 'package:punnyam/providers/ticket_providetr.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ISSUE BOOK SCREEN — pooja dropdown filter, per-row issue selection
@@ -14,23 +22,16 @@ class IssueBookScreen extends StatefulWidget {
 }
 
 class _LeafRangeRow {
-  final int slNo;
-  final String item;
-  final DateTime date;
-  final int fromNo;
-  final int toNo;
+  final AvailableBook book;
 
   bool selected = false;
   DateTime? issueDate;
-  String? temple;
+  Datum? selectedCounter;
 
-  _LeafRangeRow({
-    required this.slNo,
-    required this.item,
-    required this.date,
-    required this.fromNo,
-    required this.toNo,
-  });
+  _LeafRangeRow(this.book);
+
+  int get fromNo => book.leafFrom;
+  int get toNo => book.leafTo;
 }
 
 class _IssueBookScreenState extends State<IssueBookScreen>
@@ -44,25 +45,17 @@ class _IssueBookScreenState extends State<IssueBookScreen>
   static const _hintColor = Color.fromARGB(255, 8, 8, 8);
   static const _border = Color(0xFFEADDD8);
 
-  // ── Data ─────────────────────────────────────────────────────────────────────
-  final Map<String, int> _poojaLeafCounts = const {
-    'Ganapathi Homam': 50,
-    'Sahasranamam': 100,
-    'Ashtothram': 30,
-    'Pradosham': 75,
-    'Abhishekam': 25,
-    'Deeparadhana': 10,
-  };
+  // // ── Data ─────────────────────────────────────────────────────────────────────
+  // // TODO: replace with real data once a temples API/provider is available.
+  // final List<String> _temples = const [
+  //   'Sree Padmanabhaswamy Temple',
+  //   'Attukal Bhagavathy Temple',
+  //   'Vamanapuram Devi Temple',
+  // ];
 
-  final List<String> _temples = const [
-    'Sree Padmanabhaswamy Temple',
-    'Attukal Bhagavathy Temple',
-    'Vamanapuram Devi Temple',
-  ];
-
-  List<_LeafRangeRow> _allRows = [];
-  String? _selectedPooja; // currently chosen pooja
-  bool _isLoading = true;
+  List<_LeafRangeRow> _rows = [];
+  PoojaData? _selectedPooja; // currently chosen pooja
+  bool _isLoadingRows = false;
   bool _isIssuing = false;
 
   late final AnimationController _fadeCtrl;
@@ -77,7 +70,16 @@ class _IssueBookScreenState extends State<IssueBookScreen>
       duration: const Duration(milliseconds: 300),
     );
     _fadeAnim = CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeIn);
-    _loadData();
+    CommonFunctions.afterInit(() {
+      final billingProvider = context.read<BillingProvider>();
+      if (billingProvider.poojaDataList.isEmpty) {
+        billingProvider.getPoojas();
+      }
+      final homeProvider = context.read<HomeProvider>();
+      if (homeProvider.counterdata == null || homeProvider.counterdata!.isEmpty) {
+        homeProvider.getCounter();
+      }
+    });
   }
 
   @override
@@ -87,51 +89,30 @@ class _IssueBookScreenState extends State<IssueBookScreen>
   }
 
   // ── Data helpers ─────────────────────────────────────────────────────────────
-  void _loadData() {
+  Future<void> _onPoojaSelected(PoojaData? pooja) async {
     setState(() {
-      _isLoading = true;
-      _selectedPooja = null;
-      _allRows = [];
+      _selectedPooja = pooja;
+      _rows = [];
     });
+    if (pooja?.poojaId == null) return;
+
+    setState(() => _isLoadingRows = true);
     _fadeCtrl.reset();
 
-    Future.delayed(const Duration(milliseconds: 350), () {
-      if (!mounted) return;
-      final generated = <_LeafRangeRow>[];
-      int slNo = 58;
-      final today = DateTime.now();
-      for (final entry in _poojaLeafCounts.entries) {
-        final leavesPerBook = entry.value;
-        for (int i = 0; i < 3; i++) {
-          final from = 1 + (i * leavesPerBook);
-          final to = from + leavesPerBook - 1;
-          generated.add(
-            _LeafRangeRow(
-              slNo: slNo++,
-              item: entry.key,
-              date: today,
-              fromNo: from,
-              toNo: to,
-            ),
-          );
-        }
-      }
-      setState(() {
-        _allRows = generated;
-        _isLoading = false;
-      });
-      _fadeCtrl.forward();
+    final ticketProvider = context.read<TicketProvidetr>();
+    await ticketProvider.availableBooks(poojaId: pooja!.poojaId!);
+
+    if (!mounted) return;
+    setState(() {
+      _rows = ticketProvider.availablebookList
+          .map((b) => _LeafRangeRow(b))
+          .toList();
+      _isLoadingRows = false;
     });
+    _fadeCtrl.forward();
   }
 
-  List<String> get _poojaOptions =>
-      _allRows.map((r) => r.item).toSet().toList();
-
-  List<_LeafRangeRow> get _visibleRows => _selectedPooja == null
-      ? []
-      : _allRows.where((r) => r.item == _selectedPooja).toList();
-
-  int get _selectedCount => _visibleRows.where((r) => r.selected).length;
+  int get _selectedCount => _rows.where((r) => r.selected).length;
 
   // ── Date picker ──────────────────────────────────────────────────────────────
   Future<void> _pickIssueDate(_LeafRangeRow row) async {
@@ -153,14 +134,14 @@ class _IssueBookScreenState extends State<IssueBookScreen>
 
   // ── Issue action ─────────────────────────────────────────────────────────────
   void _onIssueTicket() {
-    final selected = _visibleRows.where((r) => r.selected).toList();
+    final selected = _rows.where((r) => r.selected).toList();
 
     if (selected.isEmpty) {
       _showSnack('Select at least one row to issue', Colors.grey.shade700);
       return;
     }
     final missing = selected.where(
-      (r) => r.issueDate == null || (r.temple?.isEmpty ?? true),
+      (r) => r.issueDate == null || r.selectedCounter == null,
     );
     if (missing.isNotEmpty) {
       _showSnack(
@@ -172,12 +153,12 @@ class _IssueBookScreenState extends State<IssueBookScreen>
     }
 
     setState(() => _isIssuing = true);
-    // TODO: call provider / API
+    // TODO: call provider / API once a book-issue submit endpoint exists
     Future.delayed(const Duration(milliseconds: 600), () {
       if (!mounted) return;
       setState(() {
         _isIssuing = false;
-        _allRows.removeWhere((r) => selected.contains(r));
+        _rows.removeWhere((r) => selected.contains(r));
       });
       _showSnack(
         '${selected.length} leaf range${selected.length > 1 ? "s" : ""} issued',
@@ -228,9 +209,8 @@ class _IssueBookScreenState extends State<IssueBookScreen>
           Expanded(child: _buildBody()),
         ],
       ),
-      bottomNavigationBar: _selectedPooja != null && _visibleRows.isNotEmpty
-          ? _buildIssueBar()
-          : null,
+      bottomNavigationBar:
+          _selectedPooja != null && _rows.isNotEmpty ? _buildIssueBar() : null,
     );
   }
 
@@ -340,6 +320,8 @@ class _IssueBookScreenState extends State<IssueBookScreen>
 
   // ── Pooja selector ───────────────────────────────────────────────────────────
   Widget _buildPoojaSelector() {
+    final poojaDataList = context.watch<BillingProvider>().poojaDataList;
+    final isLoadingPoojas = poojaDataList.isEmpty;
     return Padding(
       padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 0),
       child: Column(
@@ -369,7 +351,7 @@ class _IssueBookScreenState extends State<IssueBookScreen>
               ],
             ),
             padding: EdgeInsets.symmetric(horizontal: 14.w),
-            child: _isLoading
+            child: isLoadingPoojas
                 ? Padding(
                     padding: EdgeInsets.symmetric(vertical: 14.h),
                     child: Row(
@@ -395,7 +377,7 @@ class _IssueBookScreenState extends State<IssueBookScreen>
                     ),
                   )
                 : DropdownButtonHideUnderline(
-                    child: DropdownButton<String>(
+                    child: DropdownButton<PoojaData>(
                       value: _selectedPooja,
                       isExpanded: true,
                       isDense: false,
@@ -417,7 +399,7 @@ class _IssueBookScreenState extends State<IssueBookScreen>
                         fontSize: 14.sp,
                         fontWeight: FontWeight.w700,
                       ),
-                      items: _poojaOptions
+                      items: poojaDataList
                           .map(
                             (p) => DropdownMenuItem(
                               value: p,
@@ -432,24 +414,13 @@ class _IssueBookScreenState extends State<IssueBookScreen>
                                     ),
                                   ),
                                   SizedBox(width: 10.w),
-                                  Text(p),
+                                  Text(p.name ?? ''),
                                 ],
                               ),
                             ),
                           )
                           .toList(),
-                      onChanged: (v) {
-                        setState(() {
-                          _selectedPooja = v;
-                          // Deselect rows from other poojas on change
-                          for (final r in _allRows) {
-                            r.selected = false;
-                          }
-                        });
-                        _fadeCtrl
-                          ..reset()
-                          ..forward();
-                      },
+                      onChanged: _onPoojaSelected,
                     ),
                   ),
           ),
@@ -459,7 +430,7 @@ class _IssueBookScreenState extends State<IssueBookScreen>
             Padding(
               padding: EdgeInsets.only(left: 2.w),
               child: Text(
-                '${_visibleRows.length} unissued range${_visibleRows.length != 1 ? "s" : ""} for $_selectedPooja',
+                '${_rows.length} unissued range${_rows.length != 1 ? "s" : ""} for ${_selectedPooja?.name ?? ''}',
                 style: GoogleFonts.poppins(
                   color: _saffron,
                   fontSize: 11.sp,
@@ -476,7 +447,7 @@ class _IssueBookScreenState extends State<IssueBookScreen>
 
   // ── Body ─────────────────────────────────────────────────────────────────────
   Widget _buildBody() {
-    if (_isLoading) {
+    if (_isLoadingRows) {
       return const Center(child: CircularProgressIndicator(color: _primary));
     }
 
@@ -486,7 +457,7 @@ class _IssueBookScreenState extends State<IssueBookScreen>
     }
 
     // Selected pooja has no rows left
-    if (_visibleRows.isEmpty) {
+    if (_rows.isEmpty) {
       return _buildEmptyState();
     }
 
@@ -495,9 +466,9 @@ class _IssueBookScreenState extends State<IssueBookScreen>
       child: ListView.separated(
         physics: const BouncingScrollPhysics(),
         padding: EdgeInsets.fromLTRB(16.w, 14.h, 16.w, 100.h),
-        itemCount: _visibleRows.length,
+        itemCount: _rows.length,
         separatorBuilder: (_, __) => SizedBox(height: 10.h),
-        itemBuilder: (_, i) => _buildLeafRangeCard(_visibleRows[i]),
+        itemBuilder: (_, i) => _buildLeafRangeCard(_rows[i]),
       ),
     );
   }
@@ -568,7 +539,7 @@ class _IssueBookScreenState extends State<IssueBookScreen>
             ),
             SizedBox(height: 6.h),
             Text(
-              'No unissued leaf ranges left\nfor $_selectedPooja',
+              'No unissued leaf ranges left\nfor ${_selectedPooja?.name ?? ''}',
               textAlign: TextAlign.center,
               style: GoogleFonts.poppins(
                 color: _hintColor,
@@ -585,12 +556,10 @@ class _IssueBookScreenState extends State<IssueBookScreen>
 
   // ── Leaf range card ──────────────────────────────────────────────────────────
   Widget _buildLeafRangeCard(_LeafRangeRow row) {
-    final dateStr = _fmt(row.date);
-    final issueDateStr = row.issueDate == null
-        ? 'mm/dd/yyyy'
-        : _fmt(row.issueDate!);
+    final issueDateStr =
+        row.issueDate == null ? 'mm/dd/yyyy' : _fmt(row.issueDate!);
     final hasDate = row.issueDate != null;
-    final hasTemple = row.temple != null;
+    final hasTemple = row.selectedCounter != null;
     final isReady = hasDate && hasTemple;
 
     return AnimatedContainer(
@@ -601,8 +570,8 @@ class _IssueBookScreenState extends State<IssueBookScreen>
         border: Border.all(
           color: row.selected
               ? isReady
-                    ? _saffron.withOpacity(0.7)
-                    : _primary.withOpacity(0.4)
+                  ? _saffron.withOpacity(0.7)
+                  : _primary.withOpacity(0.4)
               : _border,
           width: row.selected ? 1.6 : 1,
         ),
@@ -650,11 +619,10 @@ class _IssueBookScreenState extends State<IssueBookScreen>
               //       )),
               // ),
               SizedBox(width: 8.w),
-              Icon(Icons.calendar_today_rounded, color: _hintColor, size: 12),
+              Icon(Icons.menu_book_outlined, color: _hintColor, size: 12),
               SizedBox(width: 4.w),
-              // This date is the book added
               Text(
-                dateStr,
+                'Book #${row.book.bookNo}',
                 style: GoogleFonts.poppins(
                   color: _hintColor,
                   fontSize: 12.sp,
@@ -761,28 +729,29 @@ class _IssueBookScreenState extends State<IssueBookScreen>
 
   // ── Temple dropdown ──────────────────────────────────────────────────────────
   Widget _buildTempleDropdown(_LeafRangeRow row) {
+    final counterList = context.watch<HomeProvider>().counterdata ?? [];
     return Container(
       decoration: BoxDecoration(
         color: _bg,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
-          color: row.temple != null ? _primary.withOpacity(0.3) : _border,
+          color: row.selectedCounter != null ? _primary.withOpacity(0.3) : _border,
           width: 1,
         ),
       ),
       padding: EdgeInsets.symmetric(horizontal: 8.w),
       child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: row.temple,
+        child: DropdownButton<Datum>(
+          value: row.selectedCounter,
           isExpanded: true,
           isDense: true,
           icon: Icon(
             Icons.keyboard_arrow_down_rounded,
-            color: row.temple != null ? _primary : _hintColor,
+            color: row.selectedCounter != null ? _primary : _hintColor,
             size: 18,
           ),
           hint: Text(
-            'Temple',
+            'Counter',
             style: GoogleFonts.poppins(
               color: _hintColor,
               fontSize: 12.sp,
@@ -794,15 +763,15 @@ class _IssueBookScreenState extends State<IssueBookScreen>
             fontSize: 12.sp,
             fontWeight: FontWeight.w600,
           ),
-          items: _temples
+          items: counterList
               .map(
-                (t) => DropdownMenuItem(
+                (t) => DropdownMenuItem<Datum>(
                   value: t,
-                  child: Text(t, overflow: TextOverflow.ellipsis),
+                  child: Text(t.name ?? '', overflow: TextOverflow.ellipsis),
                 ),
               )
               .toList(),
-          onChanged: (v) => setState(() => row.temple = v),
+          onChanged: (v) => setState(() => row.selectedCounter = v),
         ),
       ),
     );
@@ -874,8 +843,8 @@ class _IssueBookScreenState extends State<IssueBookScreen>
                   _isIssuing
                       ? 'Issuing…'
                       : _selectedCount > 0
-                      ? 'Issue $_selectedCount Book${_selectedCount > 1 ? "s" : ""}'
-                      : 'Double Issue',
+                          ? 'Issue $_selectedCount Book${_selectedCount > 1 ? "s" : ""}'
+                          : 'Double Issue',
                   style: GoogleFonts.poppins(
                     fontSize: 15.sp,
                     fontWeight: FontWeight.w800,
