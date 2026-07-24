@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:punnyam/models/available_book_model.dart';
 import 'package:punnyam/models/bill_list_response_model.dart';
+import 'package:punnyam/models/book_close_model.dart';
+import 'package:punnyam/models/book_issue_available.dart';
 import 'package:punnyam/models/book_issue_body.dart';
 import 'package:punnyam/models/book_issue_model.dart';
 import 'package:punnyam/models/book_register_model.dart';
@@ -454,9 +456,9 @@ class ServiceConfig {
   }
 
   Future<Result> issueBook({
-     required String date,
-  required int counterId,
-  required List<Map<String, dynamic>> items,
+    required String date,
+    required int counterId,
+    required List<Map<String, dynamic>> items,
   }) async {
     final body = {
       "date": date,
@@ -470,11 +472,63 @@ class ServiceConfig {
       return Result.error(errorResponseModel);
     } else {
       var response = res.asValue!.value;
-      BookIssueModel bookIssueModel =
-          BookIssueModel.fromJson(response);
+      BookIssueModel bookIssueModel = BookIssueModel.fromJson(response);
       return (bookIssueModel.status ?? false)
           ? Result.value(bookIssueModel)
           : Result.error(bookIssueModel);
+    }
+  }
+
+  Future<Result> issueBookAvailable({
+    required String date,
+    required int counterId,
+  }) async {
+    Result res =
+        await BaseClient.get("book-issue?date=$date&counter_id=$counterId");
+    if (res.isError) {
+      ErrorResponseModel errorResponseModel =
+          ErrorResponseModel(errorMessage: "OOps...!, Something went wrong");
+      return Result.error(errorResponseModel);
+    } else {
+      var response = res.asValue!.value;
+      if (kDebugMode) {
+        print("issueBookAvailable raw response: $response");
+      }
+      BookIssueAvailable bookIssueAvailable =
+          BookIssueAvailable.fromJson(response);
+      if (kDebugMode) {
+        print(
+          "issueBookAvailable parsed poojaNames: "
+          "${bookIssueAvailable.data.map((e) => e.poojaName).toList()}",
+        );
+      }
+      return (bookIssueAvailable.status)
+          ? Result.value(bookIssueAvailable)
+          : Result.error(bookIssueAvailable);
+    }
+  }
+
+  Future<Result> closeBook({
+    required String date,
+    required int counterId,
+    required List<Map<String, dynamic>> items,
+  }) async {
+    final body = {
+      "date": date,
+      "counter_id": counterId,
+      "items": items,
+    };
+    Result res = await BaseClient.post("book-settlement", body: body);
+    if (res.isError) {
+      ErrorResponseModel errorResponseModel =
+          ErrorResponseModel(errorMessage: 'OOps...!, Something went wrong');
+      return Result.error(errorResponseModel);
+    } else {
+      var response = res.asValue!.value;
+      BookCloseModel bookCloseModel = BookCloseModel.fromJson(response);
+      return (bookCloseModel.status ?? false)
+          ? Result.value(bookCloseModel)
+          : Result.error(bookCloseModel);
     }
   }
 }
