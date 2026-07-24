@@ -434,8 +434,6 @@
 // //   //   );
 // //   // }
 
-
-
 // //   Widget _buildTempleDropdown() {
 // //     final counterList = context.watch<HomeProvider>().counterdata ?? [];
 // //     return Container(
@@ -804,11 +802,6 @@
 // //     );
 // //   }
 // // }
-
-
-
-
-
 
 // import 'package:flutter/material.dart';
 // import 'package:flutter/services.dart';
@@ -1625,10 +1618,6 @@
 //   }
 // }
 
-
-
-
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -1665,11 +1654,10 @@ class _PoojaRow {
 
   _PoojaRow({required this.item}) : toNoCtrl = TextEditingController();
 
-  // Opening Ticket = the book's starting ticket number (item.fromNo).
-  // Closing Ticket = the number staff enters for where they stopped today.
   int get toNo => int.tryParse(toNoCtrl.text.trim()) ?? 0;
   int get nos => toNo > item.fromNo ? (toNo - item.fromNo + 1) : 0;
-  int get closingTicket => toNo;
+  double get amount => nos * item.ratePerTicket;
+  int get closingTickets => item.openingTicket - nos;
 
   void dispose() => toNoCtrl.dispose();
 }
@@ -1742,78 +1730,7 @@ class _BookClosingTableScreenState extends State<BookClosingTableScreen> {
         return _PoojaRow(
           item: _PoojaItem(
             slno: i + 1,
-            // NOTE: adjust `entry.id` below if your BookIssueAvailableItem
-            // model names the book-issue identifier field differently
-            // (e.g. entry.bookIssueId).
             bookIssueId: entry.id ?? 0,
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-            
             vazhivadItem: entry.poojaName,
             fromNo: entry.leafFrom,
             ratePerTicket: entry.ratePerTicket,
@@ -1955,8 +1872,8 @@ class _BookClosingTableScreenState extends State<BookClosingTableScreen> {
             style: ElevatedButton.styleFrom(
               backgroundColor: _primary,
               foregroundColor: Colors.white,
-              shape:
-                  RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
             ),
             child: Text(
               'Confirm',
@@ -1988,9 +1905,10 @@ class _BookClosingTableScreenState extends State<BookClosingTableScreen> {
   }
 
   // ── Totals ────────────────────────────────────────────────────────────────
-  // Opening/Closing are ticket numbers, not quantities, so they aren't
-  // meaningfully summable across rows — only Nos (tickets issued) is.
   int get _totalNos => _rows.fold(0, (s, r) => s + r.nos);
+  double get _totalAmount => _rows.fold(0.0, (s, r) => s + r.amount);
+  int get _totalOpening => _rows.fold(0, (s, r) => s + r.item.openingTicket);
+  int get _totalClosing => _rows.fold(0, (s, r) => s + r.closingTickets);
 
   // ── API date formatter (yyyy-MM-dd) ─────────────────────────────────────
   String _apiDateFmt(DateTime d) =>
@@ -2125,27 +2043,27 @@ class _BookClosingTableScreenState extends State<BookClosingTableScreen> {
 
   // ── Section label ─────────────────────────────────────────────────────────
   Widget _sectionLabel(String text) => Row(
-    children: [
-      Container(
-        width: 3.w,
-        height: 14.h,
-        decoration: BoxDecoration(
-          color: _saffron,
-          borderRadius: BorderRadius.circular(2),
-        ),
-      ),
-      SizedBox(width: 8.w),
-      Text(
-        text.toUpperCase(),
-        style: GoogleFonts.poppins(
-          color: _labelColor,
-          fontSize: 11.sp,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 1.8,
-        ),
-      ),
-    ],
-  );
+        children: [
+          Container(
+            width: 3.w,
+            height: 14.h,
+            decoration: BoxDecoration(
+              color: _saffron,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          SizedBox(width: 8.w),
+          Text(
+            text.toUpperCase(),
+            style: GoogleFonts.poppins(
+              color: _labelColor,
+              fontSize: 11.sp,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.8,
+            ),
+          ),
+        ],
+      );
 
   // ── Date picker tile ──────────────────────────────────────────────────────
   Widget _buildDatePicker() {
@@ -2317,10 +2235,11 @@ class _BookClosingTableScreenState extends State<BookClosingTableScreen> {
     'From\nNo',
     'To No',
     'Nos',
+    'Amount\n(₹)',
     'Opening\nTicket',
-    'Closing\nTicket',
+    'Closing\nTickets',
   ];
-  static const _colWidths = [38.0, 120.0, 58.0, 72.0, 44.0, 68.0, 68.0];
+  static const _colWidths = [38.0, 120.0, 58.0, 72.0, 44.0, 72.0, 68.0, 68.0];
 
   Widget _buildTableHeader() {
     return Container(
@@ -2352,6 +2271,7 @@ class _BookClosingTableScreenState extends State<BookClosingTableScreen> {
   Widget _buildTableRow(_PoojaRow row, int index) {
     final isEven = index.isEven;
     final nosVal = row.nos;
+    final amtVal = row.amount;
 
     return Container(
       color: isEven ? const Color(0xFFFDF8F5) : Colors.white,
@@ -2408,21 +2328,31 @@ class _BookClosingTableScreenState extends State<BookClosingTableScreen> {
             bold: nosVal > 0,
             color: nosVal > 0 ? _saffron : _hintColor,
           ),
-          // Opening ticket (book's starting ticket number)
+          // Amount
           _cell(
-            row.item.fromNo.toString(),
+            amtVal > 0 ? amtVal.toStringAsFixed(0) : '0',
             _colWidths[5],
+            center: true,
+            bold: amtVal > 0,
+            color: amtVal > 0 ? _saffron : _hintColor,
+          ),
+          // Opening ticket
+          _cell(
+            row.item.openingTicket.toString(),
+            _colWidths[6],
             center: true,
             color: const Color(0xFF6D1A1A),
             bold: true,
           ),
-          // Closing ticket (staff-entered "To No" for today)
+          // Closing tickets
           _cell(
-            row.toNo > 0 ? row.closingTicket.toString() : '—',
-            _colWidths[6],
+            row.closingTickets.toString(),
+            _colWidths[7],
             center: true,
-            color: row.toNo > 0 ? const Color(0xFF2E6B4F) : _hintColor,
-            bold: row.toNo > 0,
+            color: row.closingTickets < row.item.openingTicket
+                ? const Color(0xFF2E6B4F)
+                : _hintColor,
+            bold: true,
           ),
         ],
       ),
@@ -2456,8 +2386,27 @@ class _BookClosingTableScreenState extends State<BookClosingTableScreen> {
             bold: true,
             color: _saffron,
           ),
-          _cell('', _colWidths[5]),
-          _cell('', _colWidths[6]),
+          _cell(
+            _totalAmount.toStringAsFixed(0),
+            _colWidths[5],
+            center: true,
+            bold: true,
+            color: _saffron,
+          ),
+          _cell(
+            _totalOpening.toString(),
+            _colWidths[6],
+            center: true,
+            bold: true,
+            color: _primary,
+          ),
+          _cell(
+            _totalClosing.toString(),
+            _colWidths[7],
+            center: true,
+            bold: true,
+            color: const Color(0xFF2E6B4F),
+          ),
         ],
       ),
     );
