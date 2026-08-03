@@ -908,10 +908,24 @@ class _LeafRangeRow {
   DateTime? issueDate;
   Datum? selectedCounter;
 
-  _LeafRangeRow(this.book);
+  // Editable only when the book isn't new (i.e. it has prior usage and the
+  // suggested continuation point may need correcting). Pre-filled with the
+  // API's suggested next_leaf_from.
+  final TextEditingController fromNoCtrl;
 
-  int get fromNo => book.leafFrom;
+  _LeafRangeRow(this.book)
+      : fromNoCtrl = TextEditingController(
+          text: book.isNew ? '${book.leafFrom}' : '${book.nextLeafFrom}',
+        );
+
+  // New books always start at their printed leafFrom. Books with prior
+  // usage default to the suggested next_leaf_from but can be edited.
+  int get fromNo => book.isNew
+      ? book.leafFrom
+      : (int.tryParse(fromNoCtrl.text.trim()) ?? book.nextLeafFrom);
   int get toNo => book.leafTo;
+
+  void dispose() => fromNoCtrl.dispose();
 }
 
 class _IssueBookScreenState extends State<IssueBookScreen>
@@ -957,11 +971,17 @@ class _IssueBookScreenState extends State<IssueBookScreen>
   @override
   void dispose() {
     _fadeCtrl.dispose();
+    for (final row in _rows) {
+      row.dispose();
+    }
     super.dispose();
   }
 
   // ── Data helpers ─────────────────────────────────────────────────────────────
   Future<void> _onPoojaSelected(PoojaData? pooja) async {
+    for (final row in _rows) {
+      row.dispose();
+    }
     setState(() {
       _selectedPooja = pooja;
       _rows = [];
@@ -1043,6 +1063,7 @@ class _IssueBookScreenState extends State<IssueBookScreen>
 
     final ticketProvider = context.read<TicketProvidetr>();
     final List<_LeafRangeRow> issuedRows = [];
+    final List<String> successMessages = [];
     final List<String> failureMessages = [];
 
     for (final entry in groupedByDate.entries) {
@@ -1064,13 +1085,19 @@ class _IssueBookScreenState extends State<IssueBookScreen>
         date: date,
         counterId: groupRows.first.selectedCounter!.id!,
         items: items,
-        onSuccess: (_) => issuedRows.addAll(groupRows),
+        onSuccess: (model) {
+          issuedRows.addAll(groupRows);
+          if (model.message.isNotEmpty) successMessages.add(model.message);
+        },
         onFailure: (msg) => failureMessages.add(msg),
       );
     }
 
     if (!mounted) return;
 
+    for (final row in issuedRows) {
+      row.dispose();
+    }
     setState(() {
       _isIssuing = false;
       _rows.removeWhere((r) => issuedRows.contains(r));
@@ -1078,7 +1105,9 @@ class _IssueBookScreenState extends State<IssueBookScreen>
 
     if (issuedRows.isNotEmpty) {
       _showSnack(
-        '${issuedRows.length} leaf range${issuedRows.length > 1 ? "s" : ""} issued',
+        successMessages.isNotEmpty
+            ? successMessages.first
+            : '${issuedRows.length} leaf range${issuedRows.length > 1 ? "s" : ""} issued',
         _primary,
         bold: true,
       );
@@ -1536,22 +1565,9 @@ class _IssueBookScreenState extends State<IssueBookScreen>
                 ),
               ),
               const Spacer(),
-              // Leaf range chip
-              Container(
-                padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 4.h),
-                decoration: BoxDecoration(
-                  color: _primary.withOpacity(0.07),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  '${row.fromNo} – ${row.toNo}',
-                  style: GoogleFonts.poppins(
-                    color: _primary,
-                    fontSize: 12.sp,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
+              // Leaf range chip — From No is editable once the book has
+              // prior usage (isNew == false); new books keep a fixed range.
+              _buildLeafRangeChip(row),
             ],
           ),
           SizedBox(height: 10.h),
@@ -1585,6 +1601,69 @@ class _IssueBookScreenState extends State<IssueBookScreen>
               ],
             ),
           ],
+        ],
+      ),
+    );
+  }
+
+  // ── Leaf range chip (From No editable only when book isn't new) ─────────────
+  Widget _buildLeafRangeChip(_LeafRangeRow row) {
+    if (row.book.isNew) {
+      return Container(
+        padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 4.h),
+        decoration: BoxDecoration(
+          color: _primary.withOpacity(0.07),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Text(
+          '${row.fromNo} – ${row.toNo}',
+          style: GoogleFonts.poppins(
+            color: _primary,
+            fontSize: 12.sp,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 6.w, vertical: 2.h),
+      decoration: BoxDecoration(
+        color: _primary.withOpacity(0.07),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: _primary.withOpacity(0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 44.w,
+            child: TextFormField(
+              controller: row.fromNoCtrl,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              textAlign: TextAlign.center,
+              style: GoogleFonts.poppins(
+                color: _primary,
+                fontSize: 12.sp,
+                fontWeight: FontWeight.w800,
+              ),
+              decoration: const InputDecoration(
+                isDense: true,
+                border: InputBorder.none,
+                contentPadding: EdgeInsets.symmetric(vertical: 4),
+              ),
+              onChanged: (_) => setState(() {}),
+            ),
+          ),
+          Text(
+            ' – ${row.toNo}',
+            style: GoogleFonts.poppins(
+              color: _primary,
+              fontSize: 12.sp,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
         ],
       ),
     );

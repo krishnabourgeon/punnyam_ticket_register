@@ -7,48 +7,15 @@ import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import 'package:provider/provider.dart';
+import 'package:punnyam/models/counters_model.dart';
+import 'package:punnyam/models/reports_model.dart';
+import 'package:punnyam/providers/home_provider.dart';
+import 'package:punnyam/providers/ticket_providetr.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MODELS
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Represents a single denomination column (e.g. ഗണപതിഹോമം, സഹസ്രനാമം, …)
-class _DenomCol {
-  final String label; // Malayalam/English label shown in header
-  final String key; // map key used in _DlrEntry.counts
-
-  const _DenomCol({required this.label, required this.key});
-}
-
-/// One data row in the register (Receipt or Issue transaction)
-class _DlrEntry {
-  final int slno;
-  final DateTime date;
-  final String item; // e.g. "ഡോർ", "Sp പൂജ്യഞ്ചലി", "പൂജ്യഞ്ചലി"
-  final String temple; // e.g. "Ac office-BNo-1"
-  final int fromNo;
-  final int toNo;
-  final Map<String, int> counts; // keyed by _DenomCol.key
-  final int total;
-  final _EntryType type;
-
-  const _DlrEntry({
-    required this.slno,
-    required this.date,
-    required this.item,
-    required this.temple,
-    required this.fromNo,
-    required this.toNo,
-    required this.counts,
-    required this.total,
-    required this.type,
-  });
-}
-
-enum _EntryType { receipt, issue }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// DOUBLE LOCK REGISTER SCREEN
+// COUNTER STATEMENT REPORT SCREEN
+// Backed by GET reports/counter-statement (see ReportsModel)
 // ─────────────────────────────────────────────────────────────────────────────
 class DoubleLockRegisterScreen extends StatefulWidget {
   const DoubleLockRegisterScreen({super.key});
@@ -65,227 +32,53 @@ class _DoubleLockRegisterScreenState extends State<DoubleLockRegisterScreen> {
   static const _text = Color(0xFF222222);
   static const _muted = Color(0xFF8A8A8A);
   static const _border = Color(0xFFE0E0E0);
-  static const _headerBg = Color(0xFF6D1A1A);
-  static const _subHeaderBg = Color(0xFFF5F0EB);
-  static const _stripeBg = Color(0xFFFAFAFA);
-  static const _receiptSectionBg = Color(0xFFEEF4EE);
-  static const _issueSectionBg = Color(0xFFEEEEF8);
-  static const _totalRowBg = Color(0xFFF5F0EB);
-  static const _balanceRowBg = Color(0xFFFFF8EE);
+  static const _bg = Color(0xFFF8F4F0);
+  static const _openColor = Color(0xFF1A4A7A);
+  static const _settledColor = Color(0xFF2E6B4F);
 
-  // ── Denomination columns ───────────────────────────────────────────────────
-  static const List<_DenomCol> _cols = [
-    _DenomCol(label: 'ഗണപതി\nഹോമം', key: 'ganapathi'),
-    _DenomCol(label: 'സഹസ്ര\nനാമം', key: 'sahasra'),
-    _DenomCol(label: 'അഷ്ടോ\nത്തരം', key: 'ashtothram'),
-    _DenomCol(label: 'പ്രദോ\nഷം', key: 'pradosham'),
-    _DenomCol(label: 'അഭി\nഷേകം', key: 'abhishekam'),
-    _DenomCol(label: 'ദീപ\nആരാ', key: 'deepa'),
-    _DenomCol(label: 'മറ്റു\nള്ളവ', key: 'others'),
-  ];
-
-  // ── Date range ─────────────────────────────────────────────────────────────
-  late DateTime _from;
-  late DateTime _to;
+  Datum? _selectedCounter;
+  DateTime? _from;
+  DateTime? _to;
   bool _isDownloading = false;
-
-  // ── Sample data ───────────────────────────────────────────────────────────
-  // In a real app this comes from Provider/API filtered by date range.
-  late List<_DlrEntry> _receipts;
-  late List<_DlrEntry> _issues;
-
-  // Opening balance (counts per denomination)
-  final Map<String, int> _openingBalance = {
-    'ganapathi': 6,
-    'sahasra': 9,
-    'ashtothram': 3,
-    'pradosham': 9,
-    'abhishekam': 5,
-    'deepa': 0,
-    'others': 5,
-  };
 
   @override
   void initState() {
     super.initState();
-    _from = DateTime(2026, 6, 1);
-    _to = DateTime(2026, 6, 18);
-    _loadData();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final homeProvider = context.read<HomeProvider>();
+      if (homeProvider.counterdata == null ||
+          homeProvider.counterdata!.isEmpty) {
+        homeProvider.getCounter();
+      }
+    });
   }
 
-  void _loadData() {
-    _receipts = [
-      _DlrEntry(
-        slno: 1,
-        date: DateTime(2026, 6, 18),
-        item: 'ഡോർ',
-        temple: 'Ac office-BNo-1',
-        fromNo: 1,
-        toNo: 100,
-        counts: {
-          'ganapathi': 0,
-          'sahasra': 0,
-          'ashtothram': 0,
-          'pradosham': 0,
-          'abhishekam': 0,
-          'deepa': 1,
-          'others': 0,
-        },
-        total: 1,
-        type: _EntryType.receipt,
-      ),
-      _DlrEntry(
-        slno: 2,
-        date: DateTime(2026, 6, 18),
-        item: 'Sp പൂജ്യഞ്ചലി',
-        temple: 'Ac office-BNo-1-2',
-        fromNo: 1,
-        toNo: 2000,
-        counts: {
-          'ganapathi': 0,
-          'sahasra': 2,
-          'ashtothram': 0,
-          'pradosham': 0,
-          'abhishekam': 0,
-          'deepa': 0,
-          'others': 0,
-        },
-        total: 2,
-        type: _EntryType.receipt,
-      ),
-      _DlrEntry(
-        slno: 3,
-        date: DateTime(2026, 6, 18),
-        item: 'Sp പൂജ്യഞ്ചലി',
-        temple: 'Ac office-BNo-1-6',
-        fromNo: 1,
-        toNo: 6000,
-        counts: {
-          'ganapathi': 0,
-          'sahasra': 6,
-          'ashtothram': 0,
-          'pradosham': 0,
-          'abhishekam': 0,
-          'deepa': 0,
-          'others': 0,
-        },
-        total: 6,
-        type: _EntryType.receipt,
-      ),
-      _DlrEntry(
-        slno: 4,
-        date: DateTime(2026, 6, 18),
-        item: 'പൂജ്യഞ്ചലി',
-        temple: 'Ac office-BNo-1-10',
-        fromNo: 1,
-        toNo: 10000,
-        counts: {
-          'ganapathi': 10,
-          'sahasra': 0,
-          'ashtothram': 0,
-          'pradosham': 0,
-          'abhishekam': 0,
-          'deepa': 0,
-          'others': 0,
-        },
-        total: 10,
-        type: _EntryType.receipt,
-      ),
-    ];
+  // ── API date formatter (yyyy-MM-dd) ───────────────────────────────────────
+  String _apiDateFmt(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
-    _issues = [
-      _DlrEntry(
-        slno: 55,
-        date: DateTime(2026, 6, 18),
-        item: 'പൂജ്യഞ്ചലി',
-        temple: 'temple1-BNo-1',
-        fromNo: 1,
-        toNo: 1000,
-        counts: {
-          'ganapathi': 1,
-          'sahasra': 0,
-          'ashtothram': 0,
-          'pradosham': 0,
-          'abhishekam': 0,
-          'deepa': 0,
-          'others': 0,
-        },
-        total: 1,
-        type: _EntryType.issue,
-      ),
-      _DlrEntry(
-        slno: 56,
-        date: DateTime(2026, 6, 18),
-        item: 'പൂജ്യഞ്ചലി',
-        temple: 'temple1-BNo-2',
-        fromNo: 1001,
-        toNo: 2000,
-        counts: {
-          'ganapathi': 1,
-          'sahasra': 0,
-          'ashtothram': 0,
-          'pradosham': 0,
-          'abhishekam': 0,
-          'deepa': 0,
-          'others': 0,
-        },
-        total: 1,
-        type: _EntryType.issue,
-      ),
-      _DlrEntry(
-        slno: 57,
-        date: DateTime(2026, 6, 18),
-        item: 'പൂജ്യഞ്ചലി',
-        temple: 'temple2-BNo-3',
-        fromNo: 2001,
-        toNo: 3000,
-        counts: {
-          'ganapathi': 1,
-          'sahasra': 0,
-          'ashtothram': 0,
-          'pradosham': 0,
-          'abhishekam': 0,
-          'deepa': 0,
-          'others': 0,
-        },
-        total: 1,
-        type: _EntryType.issue,
-      ),
-    ];
+  // ── Data fetch ─────────────────────────────────────────────────────────────
+  void _fetchReport() {
+    final counter = _selectedCounter;
+    final from = _from;
+    final to = _to;
+    if (counter?.id == null || from == null || to == null) return;
+    context.read<TicketProvidetr>().getReports(
+          fromDate: _apiDateFmt(from),
+          toDate: _apiDateFmt(to),
+          counterId: counter!.id!,
+        );
   }
 
-  // ── Computed totals ────────────────────────────────────────────────────────
-  Map<String, int> _sumCounts(List<_DlrEntry> entries) {
-    final result = <String, int>{};
-    for (final col in _cols) {
-      result[col.key] = entries.fold(0, (s, e) => s + (e.counts[col.key] ?? 0));
-    }
-    return result;
+  void _onCounterChanged(Datum? counter) {
+    setState(() => _selectedCounter = counter);
+    _fetchReport();
   }
 
-  Map<String, int> _addMaps(Map<String, int> a, Map<String, int> b) {
-    final result = <String, int>{};
-    for (final col in _cols) {
-      result[col.key] = (a[col.key] ?? 0) + (b[col.key] ?? 0);
-    }
-    return result;
-  }
-
-  Map<String, int> _subtractMaps(Map<String, int> a, Map<String, int> b) {
-    final result = <String, int>{};
-    for (final col in _cols) {
-      result[col.key] = (a[col.key] ?? 0) - (b[col.key] ?? 0);
-    }
-    return result;
-  }
-
-  int _totalOf(Map<String, int> m) => m.values.fold(0, (s, v) => s + v);
-
-  // ── Date picker ────────────────────────────────────────────────────────────
   Future<void> _pickDate(bool isFrom) async {
     final picked = await showDatePicker(
       context: context,
-      initialDate: isFrom ? _from : _to,
+      initialDate: (isFrom ? _from : _to) ?? DateTime.now(),
       firstDate: DateTime(2020),
       lastDate: DateTime.now(),
       builder: (ctx, child) => Theme(
@@ -295,27 +88,26 @@ class _DoubleLockRegisterScreenState extends State<DoubleLockRegisterScreen> {
         child: child!,
       ),
     );
-    if (picked != null) {
-      setState(() {
-        if (isFrom) {
-          _from = picked;
-        } else {
-          _to = picked;
-        }
-        _loadData(); // re-fetch filtered data
-      });
-    }
+    if (picked == null) return;
+    setState(() {
+      if (isFrom) {
+        _from = picked;
+      } else {
+        _to = picked;
+      }
+    });
+    _fetchReport();
   }
 
   // ── PDF export ─────────────────────────────────────────────────────────────
-  Future<void> _exportPdf() async {
+  Future<void> _exportPdf(Data data) async {
     setState(() => _isDownloading = true);
     try {
-      final bytes = await _buildPdf();
+      final bytes = await _buildPdf(data);
       final ts = DateFormat('yyyyMMdd_HHmm').format(DateTime.now());
       await Printing.sharePdf(
         bytes: bytes,
-        filename: 'double_lock_register_$ts.pdf',
+        filename: 'counter_statement_$ts.pdf',
       );
     } catch (e) {
       if (!mounted) return;
@@ -333,7 +125,7 @@ class _DoubleLockRegisterScreenState extends State<DoubleLockRegisterScreen> {
     }
   }
 
-  Future<Uint8List> _buildPdf() async {
+  Future<Uint8List> _buildPdf(Data data) async {
     final font = await PdfGoogleFonts.robotoRegular();
     final bold = await PdfGoogleFonts.robotoBold();
     final doc = pw.Document(
@@ -345,45 +137,12 @@ class _DoubleLockRegisterScreenState extends State<DoubleLockRegisterScreen> {
     const pdfWhite = PdfColors.white;
     const pdfBorder = PdfColor.fromInt(0xFFE0E0E0);
     const pdfText = PdfColor.fromInt(0xFF222222);
-    const pdfMuted = PdfColor.fromInt(0xFF8A8A8A);
     const pdfStripeBg = PdfColor.fromInt(0xFFFAFAFA);
-    const pdfReceiptBg = PdfColor.fromInt(0xFFEEF4EE);
-    const pdfIssueBg = PdfColor.fromInt(0xFFEEEEF8);
-    const pdfBalanceBg = PdfColor.fromInt(0xFFFFF8EE);
     const pdfTotalBg = PdfColor.fromInt(0xFFF5F0EB);
 
-    final receiptTotal = _sumCounts(_receipts);
-    final issueTotal = _sumCounts(_issues);
-    final afterReceiptBalance = _addMaps(_openingBalance, receiptTotal);
-    final closingBalance = _subtractMaps(afterReceiptBalance, issueTotal);
-
     final dateRange =
-        '${DateFormat('dd MMM yyyy').format(_from)} – ${DateFormat('dd MMM yyyy').format(_to)}';
-
-    // Column widths
-    final colWidths = <int, pw.TableColumnWidth>{
-      0: const pw.FixedColumnWidth(28), // slno
-      1: const pw.FixedColumnWidth(52), // date
-      2: const pw.FixedColumnWidth(70), // item
-      3: const pw.FixedColumnWidth(74), // temple
-      4: const pw.FixedColumnWidth(34), // fromno
-      5: const pw.FixedColumnWidth(40), // tono
-    };
-    for (int i = 0; i < _cols.length; i++) {
-      colWidths[6 + i] = const pw.FixedColumnWidth(28);
-    }
-    colWidths[6 + _cols.length] = const pw.FixedColumnWidth(28); // total
-
-    List<String> headers = [
-      'Sl',
-      'Date',
-      'Item',
-      'Temple',
-      'From',
-      'To',
-      ..._cols.map((c) => c.label.replaceAll('\n', ' ')),
-      'Total',
-    ];
+        '${DateFormat('dd MMM yyyy').format(_from!)} – ${DateFormat('dd MMM yyyy').format(_to!)}';
+    String fmtDate(DateTime d) => DateFormat('dd-MM-yy').format(d);
 
     pw.TableRow makeRow(
       List<String> cells, {
@@ -401,7 +160,7 @@ class _DoubleLockRegisterScreenState extends State<DoubleLockRegisterScreen> {
               c,
               style: pw.TextStyle(
                 color: isHeader ? pdfWhite : textColor,
-                fontSize: isHeader ? 6.5 : 7,
+                fontSize: isHeader ? 7 : 7.5,
                 fontWeight: bold || isHeader
                     ? pw.FontWeight.bold
                     : pw.FontWeight.normal,
@@ -412,38 +171,9 @@ class _DoubleLockRegisterScreenState extends State<DoubleLockRegisterScreen> {
       );
     }
 
-    String fmtDate(DateTime d) => DateFormat('dd-MM-yy').format(d);
-    List<String> entryRow(_DlrEntry e) => [
-      '${e.slno}',
-      fmtDate(e.date),
-      e.item,
-      e.temple,
-      '${e.fromNo}',
-      '${e.toNo}',
-      ..._cols.map((c) {
-        final v = e.counts[c.key] ?? 0;
-        return v == 0 ? '' : '$v';
-      }),
-      '${e.total}',
-    ];
-    List<String> sumRow(
-      Map<String, int> m,
-      String label, {
-      String prefix = '',
-    }) => [
-      '',
-      '',
-      label,
-      prefix,
-      '',
-      '',
-      ..._cols.map((c) => '${m[c.key] ?? 0}'),
-      '${_totalOf(m)}',
-    ];
-
     doc.addPage(
       pw.MultiPage(
-        pageFormat: PdfPageFormat.a4.landscape,
+        pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(20),
         build: (ctx) => [
           // Header
@@ -463,17 +193,17 @@ class _DoubleLockRegisterScreenState extends State<DoubleLockRegisterScreen> {
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
                 pw.Text(
-                  'SREE GURUMAHESWARA KSHETHRAM',
+                  'COUNTER STATEMENT REPORT',
                   style: pw.TextStyle(
                     color: pdfWhite,
-                    fontSize: 7,
+                    fontSize: 8,
                     fontWeight: pw.FontWeight.bold,
                     letterSpacing: 1.5,
                   ),
                 ),
                 pw.SizedBox(height: 3),
                 pw.Text(
-                  'Reports',
+                  data.counter.name,
                   style: pw.TextStyle(
                     color: pdfWhite,
                     fontSize: 16,
@@ -495,194 +225,140 @@ class _DoubleLockRegisterScreenState extends State<DoubleLockRegisterScreen> {
               ],
             ),
           ),
-          pw.SizedBox(height: 14),
+          pw.SizedBox(height: 12),
+
+          // Totals summary
           pw.Table(
             border: pw.TableBorder.all(color: pdfBorder, width: 0.4),
-            columnWidths: colWidths,
             children: [
-              // Header row
-              makeRow(headers, bg: pdfPrimary, isHeader: true),
-              // Opening balance
               makeRow(
-                sumRow(_openingBalance, 'Balance', prefix: 'Opening'),
-                bg: pdfBalanceBg,
-                bold: true,
-                textColor: PdfColor.fromInt(0xFF6D1A1A),
+                ['Books Issued', 'Books Open', 'Books Settled', 'Leaves Used'],
+                bg: pdfPrimary,
+                isHeader: true,
               ),
-              // RECEIPTS section label
-              pw.TableRow(
-                decoration: const pw.BoxDecoration(color: pdfReceiptBg),
-                children: [
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.symmetric(
-                      horizontal: 3,
-                      vertical: 3,
-                    ),
-                    child: pw.Text(
-                      'Receipts',
-                      style: pw.TextStyle(
-                        color: PdfColor.fromInt(0xFF2E6B4F),
-                        fontSize: 7,
-                        fontWeight: pw.FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  ...List.generate(headers.length - 1, (_) => pw.SizedBox()),
+              makeRow(
+                [
+                  '${data.totals.booksIssued}',
+                  '${data.totals.booksOpen}',
+                  '${data.totals.booksSettled}',
+                  '${data.totals.leavesUsed}',
                 ],
-              ),
-              ..._receipts.asMap().entries.map(
-                (e) => makeRow(
-                  entryRow(e.value),
-                  bg: e.key % 2 == 1 ? pdfStripeBg : pdfWhite,
-                ),
-              ),
-              makeRow(
-                sumRow(receiptTotal, 'ReceiptsTotal'),
                 bg: pdfTotalBg,
                 bold: true,
-              ),
-              // Issue balance row
-              makeRow(
-                sumRow(afterReceiptBalance, 'Balance', prefix: 'Issue'),
-                bg: pdfBalanceBg,
-                bold: true,
-                textColor: PdfColor.fromInt(0xFF6D1A1A),
-              ),
-              // ISSUE section label
-              pw.TableRow(
-                decoration: const pw.BoxDecoration(color: pdfIssueBg),
-                children: [
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.symmetric(
-                      horizontal: 3,
-                      vertical: 3,
-                    ),
-                    child: pw.Text(
-                      'Issue',
-                      style: pw.TextStyle(
-                        color: PdfColor.fromInt(0xFF1A4A7A),
-                        fontSize: 7,
-                        fontWeight: pw.FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  ...List.generate(headers.length - 1, (_) => pw.SizedBox()),
-                ],
-              ),
-              ..._issues.asMap().entries.map(
-                (e) => makeRow(
-                  entryRow(e.value),
-                  bg: e.key % 2 == 1 ? pdfStripeBg : pdfWhite,
-                ),
-              ),
-              makeRow(
-                sumRow(issueTotal, 'IssueTotal'),
-                bg: pdfTotalBg,
-                bold: true,
-              ),
-              // Closing balance
-              makeRow(
-                sumRow(closingBalance, 'Balance', prefix: 'Closing'),
-                bg: pdfBalanceBg,
-                bold: true,
-                textColor: PdfColor.fromInt(0xFF6D1A1A),
               ),
             ],
           ),
+          pw.SizedBox(height: 14),
+
+          // Pooja-wise summary
+          if (data.poojaWise.isNotEmpty) ...[
+            pw.Text(
+              'Pooja-wise Summary',
+              style: pw.TextStyle(
+                color: pdfPrimary,
+                fontSize: 10,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
+            pw.SizedBox(height: 6),
+            pw.Table(
+              border: pw.TableBorder.all(color: pdfBorder, width: 0.4),
+              columnWidths: const {
+                0: pw.FlexColumnWidth(2.4),
+                1: pw.FlexColumnWidth(1),
+                2: pw.FlexColumnWidth(1),
+                3: pw.FlexColumnWidth(1),
+                4: pw.FlexColumnWidth(1),
+              },
+              children: [
+                makeRow(
+                  ['Pooja', 'Issued', 'Open', 'Settled', 'Leaves Used'],
+                  bg: pdfPrimary,
+                  isHeader: true,
+                ),
+                ...data.poojaWise.asMap().entries.map(
+                  (e) => makeRow(
+                    [
+                      e.value.poojaName,
+                      '${e.value.booksIssued}',
+                      '${e.value.booksOpen}',
+                      '${e.value.booksSettled}',
+                      '${e.value.leavesUsed}',
+                    ],
+                    bg: e.key % 2 == 1 ? pdfStripeBg : pdfWhite,
+                  ),
+                ),
+              ],
+            ),
+            pw.SizedBox(height: 14),
+          ],
+
+          // Issues
+          pw.Text(
+            'Book Issues',
+            style: pw.TextStyle(
+              color: pdfPrimary,
+              fontSize: 10,
+              fontWeight: pw.FontWeight.bold,
+            ),
+          ),
+          pw.SizedBox(height: 6),
+          if (data.issues.isEmpty)
+            pw.Text(
+              'No book issues in this period',
+              style: const pw.TextStyle(fontSize: 8, color: pdfText),
+            )
+          else
+            pw.Table(
+              border: pw.TableBorder.all(color: pdfBorder, width: 0.4),
+              children: [
+                makeRow(
+                  [
+                    'Book No',
+                    'Pooja',
+                    'Issue Date',
+                    'Leaf From',
+                    'Leaf To',
+                    'Used To',
+                    'Leaves Used',
+                    'Status',
+                  ],
+                  bg: pdfPrimary,
+                  isHeader: true,
+                ),
+                ...data.issues.asMap().entries.map(
+                  (e) => makeRow(
+                    [
+                      '${e.value.bookNo}',
+                      e.value.poojaName,
+                      fmtDate(e.value.issueDate),
+                      '${e.value.leafFrom}',
+                      '${e.value.leafTo}',
+                      '${e.value.leafUsedTo}',
+                      '${e.value.noOfLeafsUsed}',
+                      e.value.status,
+                    ],
+                    bg: e.key % 2 == 1 ? pdfStripeBg : pdfWhite,
+                  ),
+                ),
+              ],
+            ),
         ],
       ),
     );
     return doc.save();
   }
 
-  // ─── BUILD ─────────────────────────────────────────────────────────────────
-  // @override
-  // Widget build(BuildContext context) {
-  //   final receiptTotal = _sumCounts(_receipts);
-  //   final issueTotal = _sumCounts(_issues);
-  //   final afterReceiptBalance = _addMaps(_openingBalance, receiptTotal);
-  //   final closingBalance = _subtractMaps(afterReceiptBalance, issueTotal);
-
-  //   return Scaffold(
-  //     backgroundColor: Colors.white,
-  //     appBar: AppBar(
-  //       backgroundColor: Colors.white,
-  //       foregroundColor: _text,
-  //       elevation: 0,
-  //       scrolledUnderElevation: 0.5,
-  //       surfaceTintColor: Colors.white,
-  //       titleSpacing: 4,
-  //       systemOverlayStyle: SystemUiOverlayStyle.dark,
-  //       title: Text(
-  //         'Reports ',
-  //         style: GoogleFonts.poppins(
-  //           color: _text,
-  //           fontSize: 18.sp,
-  //           fontWeight: FontWeight.w700,
-  //         ),
-  //       ),
-  //       //actions: [
-  //         // Padding(
-  //         //   padding: EdgeInsets.only(right: 14.w),
-  //         //   child: TextButton.icon(
-  //         //     onPressed: _isDownloading ? null : _exportPdf,
-  //         //     style: TextButton.styleFrom(
-  //         //       foregroundColor: _accent,
-  //         //       padding:
-  //         //           EdgeInsets.symmetric(horizontal: 10.w, vertical: 6.h),
-  //         //       shape: RoundedRectangleBorder(
-  //         //         borderRadius: BorderRadius.circular(8),
-  //         //         side: const BorderSide(color: _border),
-  //         //       ),
-  //         //     ),
-  //         //     icon: _isDownloading
-  //         //         ? SizedBox(
-  //         //             width: 14.w,
-  //         //             height: 14.w,
-  //         //             child: const CircularProgressIndicator(
-  //         //                 strokeWidth: 2, color: _accent),
-  //         //           )
-  //         //         : const Icon(Icons.download_rounded, size: 16),
-  //         //     label: Text(
-  //         //       'PDF',
-  //         //       style: GoogleFonts.poppins(
-  //         //           fontSize: 12.sp, fontWeight: FontWeight.w700),
-  //         //     ),
-  //         //   ),
-  //         // ),
-  //       //],
-  //     ),
-  //     body: Column(
-  //       children: [
-  //         _buildDateFilter(),
-  //         Expanded(
-  //           child: _buildRegisterTable(
-  //             receiptTotal: receiptTotal,
-  //             issueTotal: issueTotal,
-  //             afterReceiptBalance: afterReceiptBalance,
-  //             closingBalance: closingBalance,
-  //           ),
-  //         ),
-  //       ],
-  //     ),
-  //   );
-  // }
-
-  // // ── Date range filter bar ──────────────────────────────────────────────────
-
-  // Replace the entire body structure in DoubleLockRegisterScreen
-  // Keep all models, _cols, _sumCounts, _addMaps, _subtractMaps, _totalOf unchanged
-  // Only the build() and widget methods change below
-
+  // ─────────────────────────────────────────────────────────────────────────
+  // BUILD
+  // ─────────────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    final receiptTotal = _sumCounts(_receipts);
-    final issueTotal = _sumCounts(_issues);
-    final afterReceiptBal = _addMaps(_openingBalance, receiptTotal);
-    final closingBalance = _subtractMaps(afterReceiptBal, issueTotal);
+    final ticketProvider = context.watch<TicketProvidetr>();
+    final reportData = ticketProvider.reportsModel?.data;
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: _bg,
       appBar: AppBar(
         backgroundColor: Colors.white,
         foregroundColor: _text,
@@ -699,145 +375,142 @@ class _DoubleLockRegisterScreenState extends State<DoubleLockRegisterScreen> {
           ),
         ),
         actions: [
-          Padding(
-            padding: EdgeInsets.only(right: 14.w),
-            child: TextButton.icon(
-              onPressed: _isDownloading ? null : _exportPdf,
-              icon: _isDownloading
-                  ? SizedBox(
-                      width: 14.w,
-                      height: 14.w,
-                      child: const CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: _accent,
-                      ),
-                    )
-                  : const Icon(Icons.download_rounded, size: 16),
-              label: Text(
-                'PDF',
-                style: GoogleFonts.poppins(
-                  fontSize: 12.sp,
-                  fontWeight: FontWeight.w700,
+          if (reportData != null)
+            Padding(
+              padding: EdgeInsets.only(right: 14.w),
+              child: TextButton.icon(
+                onPressed: _isDownloading ? null : () => _exportPdf(reportData),
+                icon: _isDownloading
+                    ? SizedBox(
+                        width: 14.w,
+                        height: 14.w,
+                        child: const CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: _accent,
+                        ),
+                      )
+                    : const Icon(Icons.download_rounded, size: 16),
+                label: Text(
+                  'PDF',
+                  style: GoogleFonts.poppins(
+                    fontSize: 12.sp,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
-              ),
-              style: TextButton.styleFrom(
-                foregroundColor: _accent,
-                padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 6.h),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  side: const BorderSide(color: _border),
+                style: TextButton.styleFrom(
+                  foregroundColor: _accent,
+                  padding:
+                      EdgeInsets.symmetric(horizontal: 10.w, vertical: 6.h),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    side: const BorderSide(color: _border),
+                  ),
                 ),
               ),
             ),
-          ),
         ],
       ),
       body: Column(
         children: [
-          _buildDateFilter(),
-          Expanded(
-            child: SingleChildScrollView(
-              physics: const BouncingScrollPhysics(),
-              padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 32.h),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _summaryRow(receiptTotal, issueTotal, closingBalance),
-                  SizedBox(height: 16.h),
-                  _balanceCard(
-                    'OPENING BALANCE',
-                    _openingBalance,
-                    bg: const Color(0xFFFFF8EE),
-                    border: const Color(0xFFC17D26),
-                    labelColor: const Color(0xFFC17D26),
-                    valColor: const Color(0xFF6D1A1A),
-                  ),
-                  _sectionHeading('RECEIPTS', const Color(0xFF2E6B4F)),
-                  ..._receipts.map(
-                    (e) => _entryCard(
-                      e,
-                      iconBg: const Color(0xFFEEF4EE),
-                      iconColor: const Color(0xFF2E6B4F),
-                      icon: Icons.upload_file_rounded,
-                    ),
-                  ),
-                  _totalSummaryCard('RECEIPTS TOTAL', receiptTotal, _accent),
-                  SizedBox(height: 8.h),
-                  _balanceCard(
-                    'ISSUE BALANCE  ·  Opening + Receipts',
-                    afterReceiptBal,
-                    bg: const Color(0xFFEEF0F8),
-                    border: const Color(0xFF1A4A7A),
-                    labelColor: const Color(0xFF1A4A7A),
-                    valColor: const Color(0xFF1A4A7A),
-                  ),
-                  _sectionHeading('ISSUES', const Color(0xFF1A4A7A)),
-                  ..._issues.map(
-                    (e) => _entryCard(
-                      e,
-                      iconBg: const Color(0xFFEEF0F8),
-                      iconColor: const Color(0xFF1A4A7A),
-                      icon: Icons.download_rounded,
-                    ),
-                  ),
-                  _totalSummaryCard(
-                    'ISSUES TOTAL',
-                    issueTotal,
-                    const Color(0xFF1A4A7A),
-                  ),
-                  SizedBox(height: 8.h),
-                  _balanceCard(
-                    'CLOSING BALANCE',
-                    closingBalance,
-                    bg: const Color(0xFFEEF4EE),
-                    border: const Color(0xFF2E6B4F),
-                    labelColor: const Color(0xFF2E6B4F),
-                    valColor: const Color(0xFF2E6B4F),
-                  ),
-                ],
-              ),
-            ),
-          ),
+          _buildFilterBar(),
+          Expanded(child: _buildBody(ticketProvider, reportData)),
         ],
       ),
     );
   }
 
-  Widget _buildDateFilter() {
+  // ── Filter bar (From / To date + Counter) ─────────────────────────────────
+  Widget _buildFilterBar() {
     final fmt = DateFormat('dd/MM/yyyy');
+    final counterList = context.watch<HomeProvider>().counterdata ?? [];
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 10.h),
       decoration: const BoxDecoration(
         color: Color(0xFFF8F4F0),
         border: Border(bottom: BorderSide(color: _border)),
       ),
-      child: Row(
+      child: Column(
         children: [
-          _dateChip('From', fmt.format(_from), () => _pickDate(true)),
-          SizedBox(width: 10.w),
-          _dateChip('To', fmt.format(_to), () => _pickDate(false)),
-          // const Spacer(),
-          // Text(
-          //   '${_receipts.length} receipts · ${_issues.length} issues',
-          //   style: GoogleFonts.poppins(
-          //     color: _muted,
-          //     fontSize: 11.sp,
-          //     fontWeight: FontWeight.w600,
-          //   ),
-          // ),
+          Row(
+            children: [
+              Expanded(
+                child: _dateChip(
+                  'From',
+                  _from != null ? fmt.format(_from!) : 'Select date',
+                  () => _pickDate(true),
+                ),
+              ),
+              SizedBox(width: 10.w),
+              Expanded(
+                child: _dateChip(
+                  'To',
+                  _to != null ? fmt.format(_to!) : 'Select date',
+                  () => _pickDate(false),
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 10.h),
+          Container(
+            width: double.infinity,
+            padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 4.h),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: _border),
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<Datum>(
+                value: _selectedCounter,
+                isExpanded: true,
+                isDense: true,
+                icon: const Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  color: _accent,
+                  size: 18,
+                ),
+                hint: Text(
+                  'Select Counter',
+                  style: GoogleFonts.poppins(
+                    color: _muted,
+                    fontSize: 12.sp,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                style: GoogleFonts.poppins(
+                  color: _text,
+                  fontSize: 13.sp,
+                  fontWeight: FontWeight.w600,
+                ),
+                dropdownColor: Colors.white,
+                borderRadius: BorderRadius.circular(10),
+                items: counterList
+                    .map(
+                      (t) => DropdownMenuItem<Datum>(
+                        value: t,
+                        child:
+                            Text(t.name ?? '', overflow: TextOverflow.ellipsis),
+                      ),
+                    )
+                    .toList(),
+                onChanged: _onCounterChanged,
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
 
   Widget _dateChip(String label, String value, VoidCallback onTap) {
+    final isPlaceholder = value == 'Select date';
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 6.h),
+        padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 8.h),
         decoration: BoxDecoration(
           color: Colors.white,
-          border: Border.all(color: _border),
+          border: Border.all(color: isPlaceholder ? _saffron : _border),
           borderRadius: BorderRadius.circular(8),
         ),
         child: Row(
@@ -851,12 +524,17 @@ class _DoubleLockRegisterScreenState extends State<DoubleLockRegisterScreen> {
                 fontWeight: FontWeight.w600,
               ),
             ),
-            Text(
-              value,
-              style: GoogleFonts.poppins(
-                color: _text,
-                fontSize: 12.sp,
-                fontWeight: FontWeight.w700,
+            Expanded(
+              child: Text(
+                value,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.poppins(
+                  color: isPlaceholder ? _saffron : _text,
+                  fontSize: 12.sp,
+                  fontWeight: FontWeight.w700,
+                  fontStyle:
+                      isPlaceholder ? FontStyle.italic : FontStyle.normal,
+                ),
               ),
             ),
             SizedBox(width: 6.w),
@@ -867,306 +545,139 @@ class _DoubleLockRegisterScreenState extends State<DoubleLockRegisterScreen> {
     );
   }
 
-  // ── Main register table ────────────────────────────────────────────────────
-  Widget _buildRegisterTable({
-    required Map<String, int> receiptTotal,
-    required Map<String, int> issueTotal,
-    required Map<String, int> afterReceiptBalance,
-    required Map<String, int> closingBalance,
-  }) {
+  // ── Body states ────────────────────────────────────────────────────────────
+  Widget _buildBody(TicketProvidetr provider, Data? data) {
+    if (_selectedCounter == null) {
+      return _emptyState(
+        Icons.temple_hindu_outlined,
+        'Select a counter to view the report',
+      );
+    }
+    if (_from == null || _to == null) {
+      return _emptyState(
+        Icons.date_range_rounded,
+        'Select a From and To date\nto view the report',
+      );
+    }
+    if (provider.isLoadingReport) {
+      return const Center(child: CircularProgressIndicator(color: _accent));
+    }
+    if (data == null) {
+      return _emptyState(
+        Icons.inbox_outlined,
+        'No report data found for\n${_selectedCounter?.name ?? ''} in this period',
+      );
+    }
     return SingleChildScrollView(
-      scrollDirection: Axis.vertical,
       physics: const BouncingScrollPhysics(),
-      padding: EdgeInsets.only(bottom: 24.h),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        physics: const BouncingScrollPhysics(),
-        child: Padding(
-          padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 12.h),
-          child: Container(
-            decoration: BoxDecoration(
-              border: Border.all(color: _border),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: Table(
-              defaultColumnWidth: const IntrinsicColumnWidth(),
-              border: TableBorder(
-                horizontalInside: BorderSide(color: _border, width: 0.6),
-                verticalInside: BorderSide(color: _border, width: 0.6),
-                top: BorderSide.none,
-                bottom: BorderSide.none,
-                left: BorderSide.none,
-                right: BorderSide.none,
+      padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 32.h),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _summaryGrid(data.totals),
+          SizedBox(height: 20.h),
+          if (data.poojaWise.isNotEmpty) ...[
+            _sectionHeading('POOJA-WISE SUMMARY', _accent),
+            ...data.poojaWise.map((p) => _poojaWiseCard(p)),
+            SizedBox(height: 8.h),
+          ],
+          _sectionHeading('BOOK ISSUES', _openColor),
+          if (data.issues.isEmpty)
+            _inlineNote('No book issues in this period')
+          else
+            ...data.issues.map((issue) => _issueCard(issue)),
+        ],
+      ),
+    );
+  }
+
+  Widget _emptyState(IconData icon, String message) {
+    return Center(
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: 32.w),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: _muted, size: 40),
+            SizedBox(height: 12.h),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: GoogleFonts.poppins(
+                color: _muted,
+                fontSize: 13.sp,
+                fontWeight: FontWeight.w600,
               ),
-              children: [
-                // ── HEADER ──────────────────────────────────────────────────
-                _headerRow(),
-
-                // ── OPENING BALANCE ──────────────────────────────────────────
-                _balanceRow(
-                  label: 'Balance',
-                  sublabel: '',
-                  counts: _openingBalance,
-                  isOpening: true,
-                ),
-
-                // ── RECEIPTS SECTION LABEL ───────────────────────────────────
-                _sectionLabelRow(
-                  'Receipts',
-                  const Color(0xFF2E6B4F),
-                  _receiptSectionBg,
-                ),
-
-                // ── RECEIPT ENTRIES ──────────────────────────────────────────
-                ..._receipts.asMap().entries.map(
-                  (e) => _dataRow(e.value, isAlt: e.key % 2 == 1),
-                ),
-
-                // ── RECEIPTS TOTAL ───────────────────────────────────────────
-                _totalRow('ReceiptsTotal', receiptTotal),
-
-                // ── ISSUE BALANCE (opening + receipts) ──────────────────────
-                _balanceRow(
-                  label: 'Balance',
-                  sublabel: 'Issue',
-                  counts: afterReceiptBalance,
-                  isOpening: false,
-                ),
-
-                // ── ISSUE SECTION LABEL ──────────────────────────────────────
-                _sectionLabelRow(
-                  'Issue',
-                  const Color(0xFF1A4A7A),
-                  _issueSectionBg,
-                ),
-
-                // ── ISSUE ENTRIES ────────────────────────────────────────────
-                ..._issues.asMap().entries.map(
-                  (e) => _dataRow(e.value, isAlt: e.key % 2 == 1),
-                ),
-
-                // ── ISSUE TOTAL ──────────────────────────────────────────────
-                _totalRow('IssueTotal', issueTotal),
-
-                // ── CLOSING BALANCE ──────────────────────────────────────────
-                _balanceRow(
-                  label: 'Balance',
-                  sublabel: 'Closing',
-                  counts: closingBalance,
-                  isOpening: false,
-                ),
-              ],
             ),
-          ),
+          ],
         ),
       ),
     );
   }
 
-  // ── Table row builders ─────────────────────────────────────────────────────
-
-  TableRow _headerRow() {
-    Widget hCell(String text, {int flex = 1}) => Container(
-      color: _headerBg,
-      padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 8.h),
+  Widget _inlineNote(String text) {
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 20.h),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _border),
+      ),
+      alignment: Alignment.center,
       child: Text(
         text,
-        textAlign: TextAlign.center,
         style: GoogleFonts.poppins(
-          color: Colors.white,
-          fontSize: 10.sp,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-    );
-
-    return TableRow(
-      children: [
-        hCell('Sl\nNo'),
-        hCell('Date'),
-        hCell('Item'),
-        hCell('Temple'),
-        hCell('From\nNo'),
-        hCell('To\nNo'),
-        ..._cols.map((c) => hCell(c.label)),
-        hCell('Total'),
-      ],
-    );
-  }
-
-  TableRow _dataRow(_DlrEntry e, {bool isAlt = false}) {
-    final bg = isAlt ? _stripeBg : Colors.white;
-
-    Widget cell(String text, {TextAlign align = TextAlign.center}) => Container(
-      color: bg,
-      padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 9.h),
-      child: Text(
-        text,
-        textAlign: align,
-        style: GoogleFonts.poppins(
-          color: _text,
-          fontSize: 11.sp,
-          fontWeight: FontWeight.w500,
-        ),
-      ),
-    );
-
-    Widget countCell(int v) => Container(
-      color: bg,
-      padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 9.h),
-      child: Text(
-        v == 0 ? '' : '$v',
-        textAlign: TextAlign.center,
-        style: GoogleFonts.poppins(
-          color: _text,
-          fontSize: 11.sp,
+          color: _muted,
+          fontSize: 12.sp,
           fontWeight: FontWeight.w600,
         ),
       ),
     );
+  }
 
-    return TableRow(
+  // ── Totals summary (2x2 metric grid) ──────────────────────────────────────
+  Widget _summaryGrid(Totals totals) {
+    return Column(
       children: [
-        cell('${e.slno}'),
-        cell(DateFormat('dd-MM-yy').format(e.date)),
-        cell(e.item, align: TextAlign.left),
-        cell(e.temple, align: TextAlign.left),
-        cell('${e.fromNo}'),
-        cell('${e.toNo}'),
-        ..._cols.map((c) => countCell(e.counts[c.key] ?? 0)),
-        Container(
-          color: bg,
-          padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 9.h),
-          child: Text(
-            '${e.total}',
-            textAlign: TextAlign.center,
-            style: GoogleFonts.poppins(
-              color: _text,
-              fontSize: 11.sp,
-              fontWeight: FontWeight.w700,
+        Row(
+          children: [
+            Expanded(
+              child: _metricCard(
+                'BOOKS\nISSUED',
+                '${totals.booksIssued}',
+                _accent,
+              ),
             ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  TableRow _sectionLabelRow(String label, Color color, Color bg) {
-    return TableRow(
-      children: [
-        Container(
-          color: bg,
-          padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 6.h),
-          child: Text(
-            label,
-            style: GoogleFonts.poppins(
-              color: color,
-              fontSize: 11.sp,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 0.5,
+            SizedBox(width: 10.w),
+            Expanded(
+              child: _metricCard(
+                'BOOKS\nOPEN',
+                '${totals.booksOpen}',
+                _openColor,
+              ),
             ),
-          ),
+          ],
         ),
-        // Fill remaining cols with colored empty cells
-        ...List.generate(5 + _cols.length + 1, (_) => Container(color: bg)),
-      ],
-    );
-  }
-
-  TableRow _totalRow(String label, Map<String, int> counts) {
-    Widget cell(String text, {bool isLabel = false}) => Container(
-      color: _totalRowBg,
-      padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 8.h),
-      child: Text(
-        text,
-        textAlign: isLabel ? TextAlign.left : TextAlign.center,
-        style: GoogleFonts.poppins(
-          color: _accent,
-          fontSize: 11.sp,
-          fontWeight: FontWeight.w800,
-        ),
-      ),
-    );
-
-    return TableRow(
-      children: [
-        cell(''),
-        cell(''),
-        cell(label, isLabel: true),
-        cell(''),
-        cell(''),
-        cell(''),
-        ..._cols.map((c) => cell('${counts[c.key] ?? 0}')),
-        cell('${_totalOf(counts)}'),
-      ],
-    );
-  }
-
-  TableRow _balanceRow({
-    required String label,
-    required String sublabel,
-    required Map<String, int> counts,
-    required bool isOpening,
-  }) {
-    Widget cell(String text, {bool isLabel = false}) => Container(
-      color: _balanceRowBg,
-      padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 8.h),
-      child: Text(
-        text,
-        textAlign: isLabel ? TextAlign.left : TextAlign.center,
-        style: GoogleFonts.poppins(
-          color: _saffron,
-          fontSize: 11.sp,
-          fontWeight: FontWeight.w800,
-        ),
-      ),
-    );
-
-    return TableRow(
-      children: [
-        cell(''),
-        cell(sublabel),
-        cell(label, isLabel: true),
-        cell(''),
-        cell(''),
-        cell(''),
-        ..._cols.map((c) => cell('${counts[c.key] ?? 0}')),
-        cell('${_totalOf(counts)}'),
-      ],
-    );
-  }
-
-  // ── Summary metric row ────────────────────────────────────────────────────────
-  Widget _summaryRow(
-    Map<String, int> rTot,
-    Map<String, int> iTot,
-    Map<String, int> closing,
-  ) {
-    return Row(
-      children: [
-        Expanded(
-          child: _metricCard(
-            'TOTAL\nRECEIPTS',
-            '${_totalOf(rTot)}',
-            const Color(0xFF2E6B4F),
-          ),
-        ),
-        SizedBox(width: 10.w),
-        Expanded(
-          child: _metricCard(
-            'TOTAL\nISSUES',
-            '${_totalOf(iTot)}',
-            const Color(0xFF1A4A7A),
-          ),
-        ),
-        SizedBox(width: 10.w),
-        Expanded(
-          child: _metricCard(
-            'CLOSING\nBALANCE',
-            '${_totalOf(closing)}',
-            _accent,
-          ),
+        SizedBox(height: 10.h),
+        Row(
+          children: [
+            Expanded(
+              child: _metricCard(
+                'BOOKS\nSETTLED',
+                '${totals.booksSettled}',
+                _settledColor,
+              ),
+            ),
+            SizedBox(width: 10.w),
+            Expanded(
+              child: _metricCard(
+                'LEAVES\nUSED',
+                '${totals.leavesUsed}',
+                _saffron,
+              ),
+            ),
+          ],
         ),
       ],
     );
@@ -1207,7 +718,7 @@ class _DoubleLockRegisterScreenState extends State<DoubleLockRegisterScreen> {
     );
   }
 
-  // ── Section heading ───────────────────────────────────────────────────────────
+  // ── Section heading ────────────────────────────────────────────────────────
   Widget _sectionHeading(String label, Color color) {
     return Padding(
       padding: EdgeInsets.symmetric(vertical: 14.h),
@@ -1236,13 +747,90 @@ class _DoubleLockRegisterScreenState extends State<DoubleLockRegisterScreen> {
     );
   }
 
-  // ── Entry card ─────────────────────────────────────────────────────────────────
-  Widget _entryCard(
-    _DlrEntry e, {
-    required Color iconBg,
-    required Color iconColor,
-    required IconData icon,
-  }) {
+  // ── Pooja-wise summary card ───────────────────────────────────────────────
+  Widget _poojaWiseCard(PoojaWise p) {
+    return Container(
+      margin: EdgeInsets.only(bottom: 10.h),
+      padding: EdgeInsets.all(14.w),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: _border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            p.poojaName,
+            style: GoogleFonts.poppins(
+              color: _text,
+              fontSize: 14.sp,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          SizedBox(height: 10.h),
+          Wrap(
+            spacing: 6.w,
+            runSpacing: 6.h,
+            children: [
+              _statPill('Issued', p.booksIssued, _accent),
+              _statPill('Open', p.booksOpen, _openColor),
+              _statPill('Settled', p.booksSettled, _settledColor),
+              _statPill('Leaves Used', p.leavesUsed, _saffron),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _statPill(String label, int value, Color color) {
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 6.h),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(7),
+      ),
+      child: Column(
+        children: [
+          Text(
+            label,
+            textAlign: TextAlign.center,
+            style: GoogleFonts.poppins(
+              color: color,
+              fontSize: 9.sp,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          SizedBox(height: 2.h),
+          Text(
+            '$value',
+            style: GoogleFonts.poppins(
+              color: color,
+              fontSize: 15.sp,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Issue entry card ──────────────────────────────────────────────────────
+  Color _statusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'open':
+        return _openColor;
+      case 'settled':
+      case 'closed':
+        return _settledColor;
+      default:
+        return _muted;
+    }
+  }
+
+  Widget _issueCard(Issue e) {
+    final statusColor = _statusColor(e.status);
     return Container(
       margin: EdgeInsets.only(bottom: 10.h),
       decoration: BoxDecoration(
@@ -1254,17 +842,20 @@ class _DoubleLockRegisterScreenState extends State<DoubleLockRegisterScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header
           Row(
             children: [
               Container(
                 width: 36.w,
                 height: 36.w,
                 decoration: BoxDecoration(
-                  color: iconBg,
+                  color: statusColor.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(9),
                 ),
-                child: Icon(icon, color: iconColor, size: 18),
+                child: Icon(
+                  Icons.menu_book_rounded,
+                  color: statusColor,
+                  size: 18,
+                ),
               ),
               SizedBox(width: 10.w),
               Expanded(
@@ -1272,7 +863,7 @@ class _DoubleLockRegisterScreenState extends State<DoubleLockRegisterScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      e.item,
+                      e.poojaName,
                       style: GoogleFonts.poppins(
                         color: _text,
                         fontSize: 14.sp,
@@ -1280,13 +871,12 @@ class _DoubleLockRegisterScreenState extends State<DoubleLockRegisterScreen> {
                       ),
                     ),
                     Text(
-                      e.temple,
+                      'Book #${e.bookNo}',
                       style: GoogleFonts.poppins(
                         color: _muted,
                         fontSize: 11.sp,
                         fontWeight: FontWeight.w500,
                       ),
-                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),
@@ -1294,60 +884,38 @@ class _DoubleLockRegisterScreenState extends State<DoubleLockRegisterScreen> {
               Container(
                 padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 3.h),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF5F0EB),
+                  color: statusColor.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
-                  '#${e.slno}',
+                  e.status.toUpperCase(),
                   style: GoogleFonts.poppins(
-                    color: _muted,
-                    fontSize: 10.sp,
+                    color: statusColor,
+                    fontSize: 9.sp,
                     fontWeight: FontWeight.w700,
+                    letterSpacing: 0.5,
                   ),
                 ),
               ),
             ],
           ),
           SizedBox(height: 10.h),
-          // Meta pills
           Wrap(
             spacing: 6.w,
             runSpacing: 6.h,
             children: [
               _metaPill(
                 Icons.calendar_today_rounded,
-                DateFormat('dd-MM-yy').format(e.date),
+                DateFormat('dd-MM-yy').format(e.issueDate),
               ),
-              _metaPill(Icons.arrow_forward_rounded, '${e.fromNo} → ${e.toNo}'),
+              _metaPill(
+                Icons.arrow_forward_rounded,
+                '${e.leafFrom} → ${e.leafTo}',
+              ),
+              _metaPill(Icons.check_circle_outline_rounded, 'Used to ${e.leafUsedTo}'),
               _metaPill(
                 Icons.confirmation_number_outlined,
-                '${e.toNo - e.fromNo + 1} tickets',
-              ),
-            ],
-          ),
-          Divider(height: 18.h, color: _border, thickness: 0.5),
-          // Denomination grid
-          _denomGrid(e.counts),
-          SizedBox(height: 10.h),
-          // Total
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              Text(
-                'Total books  ',
-                style: GoogleFonts.poppins(
-                  color: _muted,
-                  fontSize: 11.sp,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              Text(
-                '${e.total}',
-                style: GoogleFonts.poppins(
-                  color: iconColor,
-                  fontSize: 16.sp,
-                  fontWeight: FontWeight.w800,
-                ),
+                '${e.noOfLeafsUsed} leaves used',
               ),
             ],
           ),
@@ -1375,194 +943,6 @@ class _DoubleLockRegisterScreenState extends State<DoubleLockRegisterScreen> {
               fontSize: 11.sp,
               fontWeight: FontWeight.w600,
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── Denomination grid (chips) ─────────────────────────────────────────────────
-  Widget _denomGrid(Map<String, int> counts) {
-    return Wrap(
-      spacing: 6.w,
-      runSpacing: 6.h,
-      children: _cols.map((c) {
-        final v = counts[c.key] ?? 0;
-        final active = v > 0;
-        return Container(
-          padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 6.h),
-          decoration: BoxDecoration(
-            color: active ? const Color(0xFFF9E8E8) : const Color(0xFFF5F0EB),
-            borderRadius: BorderRadius.circular(7),
-            border: active
-                ? Border.all(color: _accent.withOpacity(0.25))
-                : null,
-          ),
-          child: Column(
-            children: [
-              Text(
-                c.label.replaceAll('\n', ' '),
-                textAlign: TextAlign.center,
-                style: GoogleFonts.poppins(
-                  color: active ? _accent : _muted,
-                  fontSize: 9.sp,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              SizedBox(height: 2.h),
-              Text(
-                '$v',
-                style: GoogleFonts.poppins(
-                  color: active ? _accent : _muted,
-                  fontSize: 15.sp,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ],
-          ),
-        );
-      }).toList(),
-    );
-  }
-
-  // ── Total summary card ────────────────────────────────────────────────────────
-  Widget _totalSummaryCard(String title, Map<String, int> counts, Color color) {
-    return Container(
-      padding: EdgeInsets.all(14.w),
-      margin: EdgeInsets.only(bottom: 8.h),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.04),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: color.withOpacity(0.2)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: GoogleFonts.poppins(
-              color: color,
-              fontSize: 10.sp,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1.2,
-            ),
-          ),
-          SizedBox(height: 10.h),
-          _denomGrid(counts),
-          SizedBox(height: 10.h),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              Text(
-                'Grand Total  ',
-                style: GoogleFonts.poppins(
-                  color: _muted,
-                  fontSize: 11.sp,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              Text(
-                '${_totalOf(counts)}',
-                style: GoogleFonts.poppins(
-                  color: color,
-                  fontSize: 16.sp,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── Balance card ──────────────────────────────────────────────────────────────
-  Widget _balanceCard(
-    String title,
-    Map<String, int> counts, {
-    required Color bg,
-    required Color border,
-    required Color labelColor,
-    required Color valColor,
-  }) {
-    return Container(
-      padding: EdgeInsets.all(14.w),
-      margin: EdgeInsets.only(bottom: 8.h),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: border.withOpacity(0.3)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: GoogleFonts.poppins(
-              color: labelColor,
-              fontSize: 10.sp,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1.1,
-            ),
-          ),
-          SizedBox(height: 10.h),
-          Wrap(
-            spacing: 6.w,
-            runSpacing: 6.h,
-            children: _cols.map((c) {
-              final v = counts[c.key] ?? 0;
-              return Container(
-                padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 6.h),
-                decoration: BoxDecoration(
-                  color: labelColor.withOpacity(0.08),
-                  borderRadius: BorderRadius.circular(7),
-                ),
-                child: Column(
-                  children: [
-                    Text(
-                      c.label.replaceAll('\n', ' '),
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.poppins(
-                        color: labelColor,
-                        fontSize: 9.sp,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    SizedBox(height: 2.h),
-                    Text(
-                      '$v',
-                      style: GoogleFonts.poppins(
-                        color: valColor,
-                        fontSize: 15.sp,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }).toList(),
-          ),
-          SizedBox(height: 10.h),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              Text(
-                'Total  ',
-                style: GoogleFonts.poppins(
-                  color: labelColor.withOpacity(0.7),
-                  fontSize: 11.sp,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              Text(
-                '${_totalOf(counts)}',
-                style: GoogleFonts.poppins(
-                  color: valColor,
-                  fontSize: 16.sp,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ],
           ),
         ],
       ),

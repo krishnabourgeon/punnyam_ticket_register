@@ -22,8 +22,10 @@ class BookIssueModel {
 
   factory BookIssueModel.fromJson(Map<String, dynamic> json) => BookIssueModel(
         status: json["status"],
-        data: List<BookIssue>.from(
-            json["data"].map((x) => BookIssue.fromJson(x))),
+        data: json["data"] == null
+            ? []
+            : List<BookIssue>.from(
+                json["data"].map((x) => BookIssue.fromJson(x))),
         message: json["message"],
       );
 

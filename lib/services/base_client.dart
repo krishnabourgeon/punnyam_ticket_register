@@ -95,14 +95,13 @@ class BaseClient {
         // var responseJson = utf8.decode(response.bodyBytes);
         return Result.value(jsonDecode(response.body));
       case 400:
-        throw BadRequestException(
-            utf8.decode(response.bodyBytes), response.request!.url.toString());
       case 401:
       case 403:
-        return Result.value(jsonDecode(response.body));
       case 422:
-        throw BadRequestException(
-            utf8.decode(response.bodyBytes), response.request!.url.toString());
+        // These carry a JSON body of the form {"status":false,"message":"..."}
+        // — decode it as a normal value so callers can read the real
+        // server-provided message instead of a generic exception.
+        return Result.value(jsonDecode(response.body));
       case 500:
       default:
         throw FetchDataException(

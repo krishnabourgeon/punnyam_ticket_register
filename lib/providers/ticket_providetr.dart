@@ -6,6 +6,8 @@ import 'package:punnyam/models/book_issue_available.dart';
 import 'package:punnyam/models/book_issue_model.dart';
 import 'package:punnyam/models/book_register_model.dart';
 import 'package:punnyam/models/error_response_model.dart';
+import 'package:punnyam/models/reports_model.dart';
+import 'package:punnyam/models/settings_model.dart';
 import 'package:punnyam/services/provider_helper_class.dart';
 
 class TicketProvidetr extends ChangeNotifier with ProviderHelperClass {
@@ -16,6 +18,12 @@ class TicketProvidetr extends ChangeNotifier with ProviderHelperClass {
   BookIssueAvailable? bookIssueAvailableModel;
   List<BookIssueAvailableItem> bookIssueAvailableList = [];
   List<BookIssueAvailableItem> allBookIssueAvailableList = [];
+
+  ReportsModel? reportsModel;
+  bool isLoadingReport = false;
+
+  int? defaultLeafsPerBook;
+  bool bookRegisterSettingsLoaded = false;
 
   // BookIssueAvailable? bookIssueAvailableModel;
   // List<dynamic> bookIssueAvailableList = [];
@@ -189,6 +197,56 @@ class TicketProvidetr extends ChangeNotifier with ProviderHelperClass {
       updateLoadState(LoaderState.loaded);
       if (onFailure != null) onFailure("Failed to close Book");
     }
+  }
+
+
+  
+
+  Future<void> getReports({
+    required String fromDate,
+    required String toDate,
+    required int counterId,
+  }) async {
+    final network = await CommonFunctions.checkInternetConnection();
+    if (!network) {
+      return;
+    }
+    isLoadingReport = true;
+    notifyListeners();
+    try {
+      var res = await serviceConfig.getReports(
+        fromDate: fromDate,
+        toDate: toDate,
+        counterId: '$counterId',
+      );
+      if (res.isValue) {
+        reportsModel = res.asValue!.value;
+      } else {
+        reportsModel = null;
+      }
+    } catch (e) {
+      debugPrint('exception in getReports: $e');
+      reportsModel = null;
+    }
+    isLoadingReport = false;
+    notifyListeners();
+  }
+
+  Future<void> getBookRegisterSettings() async {
+    try {
+      var res = await serviceConfig.settings();
+      if (res.isValue) {
+        SettingsModel settingsModel = res.asValue!.value;
+        defaultLeafsPerBook = settingsModel.data.defaultLeafsPerBook;
+      } else {
+        defaultLeafsPerBook = null;
+      }
+    } catch (e) {
+      debugPrint('exception in getBookRegisterSettings: $e');
+      defaultLeafsPerBook = null;
+    }
+    bookRegisterSettingsLoaded = true;
+    notifyListeners();
   }
 
   void updateBookIssueAvailable(BookIssueAvailable? bookIssueAvailable) {

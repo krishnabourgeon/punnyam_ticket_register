@@ -10,7 +10,7 @@ String bookRegisterModelToJson(BookRegisterModel data) => json.encode(data.toJso
 
 class BookRegisterModel {
     bool status;
-    Data data;
+    Data? data;
     String message;
 
     BookRegisterModel({
@@ -21,13 +21,13 @@ class BookRegisterModel {
 
     factory BookRegisterModel.fromJson(Map<String, dynamic> json) => BookRegisterModel(
         status: json["status"],
-        data: Data.fromJson(json["data"]),
+        data: json["data"] == null ? null : Data.fromJson(json["data"]),
         message: json["message"],
     );
 
     Map<String, dynamic> toJson() => {
         "status": status,
-        "data": data.toJson(),
+        "data": data?.toJson(),
         "message": message,
     };
 }

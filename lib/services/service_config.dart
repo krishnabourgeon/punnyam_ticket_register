@@ -20,10 +20,12 @@ import 'package:punnyam/models/preview_bill_response.dart';
 import 'package:punnyam/models/quickbill_datamodel.dart';
 import 'package:punnyam/models/rashi_datamodel.dart';
 import 'package:punnyam/models/register_body.dart';
+import 'package:punnyam/models/reports_model.dart';
 import 'package:punnyam/models/save_bill_body.dart';
 import 'package:punnyam/models/save_bill_response.dart';
 import 'package:punnyam/models/savequickbillresponse_datamodel.dart';
 import 'package:punnyam/models/search_response_model.dart';
+import 'package:punnyam/models/settings_model.dart';
 import 'package:punnyam/models/special_star_response.dart';
 import 'package:punnyam/models/starts_response_model.dart';
 import 'package:punnyam/models/version_datamodel.dart';
@@ -529,6 +531,58 @@ class ServiceConfig {
       return (bookCloseModel.status ?? false)
           ? Result.value(bookCloseModel)
           : Result.error(bookCloseModel);
+    }
+  }
+
+
+  Future<Result> getReports({
+    required String fromDate,
+    required String toDate,
+    required String counterId,
+  }) async {
+    Result res = await BaseClient.get(
+        "reports/counter-statement?from_date=$fromDate&to_date=$toDate&counter_id=$counterId");
+    if (res.isError) {
+      ErrorResponseModel errorResponseModel =
+          ErrorResponseModel(errorMessage: "OOps...!, Something went wrong");
+      return Result.error(errorResponseModel);
+    } else {
+      var response = res.asValue!.value;
+      if (kDebugMode) {
+        print("issueBookAvailable raw response: $response");
+      }
+      ReportsModel reportsModel = ReportsModel.fromJson(response);
+      if (kDebugMode) {
+        print(
+          "issueBookAvailable parsed poojaNames: "
+          "${reportsModel.data.poojaWise.map((e) => e.poojaName).toList()}",
+        );
+      }
+      return (reportsModel.status)
+          ? Result.value(reportsModel)
+          : Result.error(reportsModel);
+    }
+  }
+
+
+
+
+  Future<Result> settings() async {
+    Result res = await BaseClient.get(
+        "settings/book-register");
+    if (res.isError) {
+      ErrorResponseModel errorResponseModel =
+          ErrorResponseModel(errorMessage: "OOps...!, Something went wrong");
+      return Result.error(errorResponseModel);
+    } else {
+      var response = res.asValue!.value;
+      if (kDebugMode) {
+        print("settings raw response: $response");
+      }
+      SettingsModel settingsModel = SettingsModel.fromJson(response);     
+      return (settingsModel.status)
+          ? Result.value(settingsModel)
+          : Result.error(settingsModel);
     }
   }
 }

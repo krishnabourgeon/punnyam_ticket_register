@@ -25,7 +25,9 @@ class BookCloseModel {
 
     factory BookCloseModel.fromJson(Map<String, dynamic> json) => BookCloseModel(
         status: json["status"],
-        data: List<Datum>.from(json["data"].map((x) => Datum.fromJson(x))),
+        data: json["data"] == null
+            ? []
+            : List<Datum>.from(json["data"].map((x) => Datum.fromJson(x))),
         message: json["message"],
     );
 

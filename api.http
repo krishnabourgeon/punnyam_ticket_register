@@ -1,0 +1,393 @@
+### Book Leaf Register API
+### Requires the VS Code "REST Client" extension (humao.rest-client).
+### Click "Send Request" above any block below.
+###
+### Routes are defined in routes/api.php and mounted under the "api" prefix
+### by App\Providers\RouteServiceProvider (Route::prefix('api')->group(...)).
+### Auth is Laravel Sanctum: POST /api/auth/login returns a bearer token,
+### which must be sent as "Authorization: Bearer <token>" on protected routes.
+
+# @baseUrl = http://localhost/appuser/public/api
+@baseUrl = http://appuser.templesoftware.in/public/api
+
+### Fill these in with real values from your local `users` table
+### before running the Login request.
+@email = hari@punnyam.com
+@password = 12345678
+
+
+### 1. Login — get a Sanctum token
+# @name login
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{email}}",
+  "password": "{{password}}"
+}
+
+
+### 2. List counters (requires a valid token from the login response above)
+POST {{baseUrl}}/counters
+Authorization: Bearer {{login.response.body.token}}
+
+
+### 3. List poojas for a deity
+POST {{baseUrl}}/deity/poojas
+Authorization: Bearer {{login.response.body.token}}
+Content-Type: application/json
+
+{
+  "deity": 1
+}
+
+
+### 4. List deities
+GET {{baseUrl}}/deities
+Authorization: Bearer {{login.response.body.token}}
+
+
+### 5. List stars
+GET {{baseUrl}}/stars
+Authorization: Bearer {{login.response.body.token}}
+
+
+### --- Book Leaf Register ---
+
+### Fill in a real pooja_id from GET/POST poojas for this tenant before running these.
+@poojaId = 138
+
+### 6. Register a new book batch (leaf 1-40, 4 leaves/book → 10 books)
+POST {{baseUrl}}/book-register
+Authorization: Bearer {{login.response.body.token}}
+Content-Type: application/json
+
+{
+  "date": "2026-07-20",
+  "pooja_id": {{poojaId}},
+  "leaf_from": 1,
+  "leaf_to": 40,
+  "leafs_per_book": 10
+}
+
+
+### 7. List book batches (paginated, default 10/page)
+GET {{baseUrl}}/book-register
+Authorization: Bearer {{login.response.body.token}}
+
+
+### 8. List book batches, page 2, 5 per page
+GET {{baseUrl}}/book-register?per_page=5&page=2
+Authorization: Bearer {{login.response.body.token}}
+
+
+### 9. List book batches filtered by date and pooja
+GET {{baseUrl}}/book-register?date=2026-07-20&pooja_id={{poojaId}}
+Authorization: Bearer {{login.response.body.token}}
+
+
+### Fill in a real counter_id (see request 2 above) and book_id (see request 10 below).
+@counterId = 1
+@bookId = 11
+@poojaId = 102
+
+### 10. List books available to issue for a pooja (next starting leaf pre-filled)
+# @name availableBooks
+GET {{baseUrl}}/book-issue/available?pooja_id={{poojaId}}&counter_id={{counterId}}
+Authorization: Bearer {{login.response.body.token}}
+
+
+### 11. Issue a book to a counter (counter_id is per-item since each pooja can go to a different counter)
+# @name issueBook
+POST {{baseUrl}}/book-issue
+Authorization: Bearer {{login.response.body.token}}
+Content-Type: application/json
+
+{
+  "date": "2026-07-20",
+  "items": [
+    { "pooja_id": {{poojaId}}, "book_id": {{bookId}}, "counter_id": {{counterId}}, "leaf_from": 1 }
+  ]
+}
+
+
+### 12. List open book issues for a counter (Close & Settle screen)
+GET {{baseUrl}}/book-issue?date=2026-07-20&counter_id={{counterId}}
+Authorization: Bearer {{login.response.body.token}}
+
+
+### Fill in the book_issue_id from request 11's response (data[0].id).
+@bookIssueId = 1
+
+### 13. Settle a book issue (record last leaf used)
+# @name settleBook
+POST {{baseUrl}}/book-settlement
+Authorization: Bearer {{login.response.body.token}}
+Content-Type: application/json
+
+{
+  "date": "2026-07-20",
+  "counter_id": {{counterId}},
+  "items": [
+    { "book_issue_id": {{bookIssueId}}, "leaf_used_to": 4 }
+  ]
+}
+
+
+### 13b. Correct a settlement (e.g. staff mis-entered leaf_used_to earlier).
+### {{settleBook.response.body.data[0].id}} is the book_settlement.id, NOT book_issue_id.
+PATCH {{baseUrl}}/book-settlement/{{settleBook.response.body.data[0].id}}
+Authorization: Bearer {{login.response.body.token}}
+Content-Type: application/json
+
+{
+  "leaf_used_to": 3
+}
+
+
+### --- Book Leaf Register Reports ---
+### These are read-only; run after the happy path above so there's data to report on.
+
+@fromDate = 2026-07-01
+@toDate = 2026-07-31
+
+### 13c. Book register list — batches registered for a pooja, in a date range
+GET {{baseUrl}}/reports/book-register?from_date={{fromDate}}&to_date={{toDate}}&pooja_id={{poojaId}}&per_page=15
+Authorization: Bearer {{login.response.body.token}}
+
+
+### 13d. Book register summary — totals per pooja (batches, leaves, books) in range
+GET {{baseUrl}}/reports/book-register-summary?from_date={{fromDate}}&to_date={{toDate}}
+Authorization: Bearer {{login.response.body.token}}
+
+
+### 13e. Book issue list — narrow to one counter + pooja (cheap, recommended for drill-down)
+GET {{baseUrl}}/reports/book-issue?from_date={{fromDate}}&to_date={{toDate}}&pooja_id={{poojaId}}&counter_id={{counterId}}&per_page=15
+Authorization: Bearer {{login.response.body.token}}
+
+
+### 13f. Book issue list — wide date range, no counter (heavier: every counter's rows, paginated)
+GET {{baseUrl}}/reports/book-issue?from_date={{fromDate}}&to_date={{toDate}}
+Authorization: Bearer {{login.response.body.token}}
+
+
+### 13g. Book issue list — filter to only still-open (unsettled) issues
+GET {{baseUrl}}/reports/book-issue?from_date={{fromDate}}&to_date={{toDate}}&status=open
+Authorization: Bearer {{login.response.body.token}}
+
+
+### 13h. Book issue summary — counter-wise: issued/open/settled counts per counter in range
+GET {{baseUrl}}/reports/book-issue-summary?from_date={{fromDate}}&to_date={{toDate}}
+Authorization: Bearer {{login.response.body.token}}
+
+
+### 13i. Book issue summary — narrowed to one pooja, still grouped by counter
+GET {{baseUrl}}/reports/book-issue-summary?from_date={{fromDate}}&to_date={{toDate}}&pooja_id={{poojaId}}
+Authorization: Bearer {{login.response.body.token}}
+
+
+### 13j. Book settlement list — narrow to one counter + pooja
+GET {{baseUrl}}/reports/book-settlement?from_date={{fromDate}}&to_date={{toDate}}&pooja_id={{poojaId}}&counter_id={{counterId}}&per_page=15
+Authorization: Bearer {{login.response.body.token}}
+
+
+### 13k. Book settlement summary — counter-wise leaves consumed in range
+GET {{baseUrl}}/reports/book-settlement-summary?from_date={{fromDate}}&to_date={{toDate}}
+Authorization: Bearer {{login.response.body.token}}
+
+
+### 13l. Counter statement — single endpoint: everything for one counter, one date range
+### (totals + pooja-wise breakdown + paginated issue/settlement detail rows)
+GET {{baseUrl}}/reports/counter-statement?from_date={{fromDate}}&to_date={{toDate}}&counter_id={{counterId}}&per_page=15
+Authorization: Bearer {{login.response.body.token}}
+
+
+### 13m. Counter statement without counter_id → expect 422 (counter_id is required here)
+GET {{baseUrl}}/reports/counter-statement?from_date={{fromDate}}&to_date={{toDate}}
+Authorization: Bearer {{login.response.body.token}}
+
+
+### 14. Logout
+POST {{baseUrl}}/auth/logout
+Authorization: Bearer {{login.response.body.token}}
+
+
+### =====================================================================
+### --- Failure cases worth trying (run after the happy path above) ---
+### =====================================================================
+
+### 15. Missing token → expect 401 Unauthenticated
+POST {{baseUrl}}/counters
+
+
+### 16. Garbage token → expect 401 Unauthenticated
+POST {{baseUrl}}/counters
+Authorization: Bearer not-a-real-token
+
+
+### 17. Login with wrong password → expect 401
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{email}}",
+  "password": "definitely-wrong"
+}
+
+
+### 18. Login missing password → expect 401 validation error
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{email}}"
+}
+
+
+### 19. Register with leaf_to less than leaf_from → expect 422 validation error
+POST {{baseUrl}}/book-register
+Authorization: Bearer {{login.response.body.token}}
+Content-Type: application/json
+
+{
+  "date": "2026-07-20",
+  "pooja_id": {{poojaId}},
+  "leaf_from": 40,
+  "leaf_to": 1,
+  "leafs_per_book": 4
+}
+
+
+### 20. Register with a leaf range that doesn't divide evenly → expect 422
+POST {{baseUrl}}/book-register
+Authorization: Bearer {{login.response.body.token}}
+Content-Type: application/json
+
+{
+  "date": "2026-07-20",
+  "pooja_id": {{poojaId}},
+  "leaf_from": 1,
+  "leaf_to": 41,
+  "leafs_per_book": 4
+}
+
+
+### 20b. Register a leaf range that overlaps an existing batch for the same pooja → expect 422
+POST {{baseUrl}}/book-register
+Authorization: Bearer {{login.response.body.token}}
+Content-Type: application/json
+
+{
+  "date": "2026-07-20",
+  "pooja_id": {{poojaId}},
+  "leaf_from": 20,
+  "leaf_to": 60,
+  "leafs_per_book": 4
+}
+
+
+### 21. Register missing required fields → expect 422 with first validation message
+POST {{baseUrl}}/book-register
+Authorization: Bearer {{login.response.body.token}}
+Content-Type: application/json
+
+{
+  "date": "2026-07-20"
+}
+
+
+### 22. Register without a token → expect 401 Unauthenticated
+POST {{baseUrl}}/book-register
+Content-Type: application/json
+
+{
+  "date": "2026-07-20",
+  "pooja_id": {{poojaId}},
+  "leaf_from": 1,
+  "leaf_to": 40,
+  "leafs_per_book": 4
+}
+
+
+### 23. Issue a book that's already open → expect 422
+POST {{baseUrl}}/book-issue
+Authorization: Bearer {{login.response.body.token}}
+Content-Type: application/json
+
+{
+  "date": "2026-07-20",
+  "items": [
+    { "pooja_id": {{poojaId}}, "book_id": {{bookId}}, "counter_id": {{counterId}}, "leaf_from": 1 }
+  ]
+}
+
+
+### 23b. Issue a book with a wrong leaf_from (not matching the next expected leaf) → expect 422
+POST {{baseUrl}}/book-issue
+Authorization: Bearer {{login.response.body.token}}
+Content-Type: application/json
+
+{
+  "date": "2026-07-21",
+  "items": [
+    { "pooja_id": {{poojaId}}, "book_id": {{bookId}}, "counter_id": {{counterId}}, "leaf_from": 1 }
+  ]
+}
+
+
+### 24. Issue missing items → expect 422 validation error
+POST {{baseUrl}}/book-issue
+Authorization: Bearer {{login.response.body.token}}
+Content-Type: application/json
+
+{
+  "date": "2026-07-20"
+}
+
+
+### 25. Settle with leaf_used_to beyond the book's leaf range → expect 422
+POST {{baseUrl}}/book-settlement
+Authorization: Bearer {{login.response.body.token}}
+Content-Type: application/json
+
+{
+  "date": "2026-07-20",
+  "counter_id": {{counterId}},
+  "items": [
+    { "book_issue_id": {{bookIssueId}}, "leaf_used_to": 9999 }
+  ]
+}
+
+
+### 26. Settle an already-settled book issue → expect 422
+POST {{baseUrl}}/book-settlement
+Authorization: Bearer {{login.response.body.token}}
+Content-Type: application/json
+
+{
+  "date": "2026-07-20",
+  "counter_id": {{counterId}},
+  "items": [
+    { "book_issue_id": {{bookIssueId}}, "leaf_used_to": 4 }
+  ]
+}
+
+
+### 27. Correct a settlement with leaf_used_to beyond the book's leaf range → expect 422
+PATCH {{baseUrl}}/book-settlement/{{settleBook.response.body.data[0].id}}
+Authorization: Bearer {{login.response.body.token}}
+Content-Type: application/json
+
+{
+  "leaf_used_to": 9999
+}
+
+
+### 28. Correct a non-existent settlement id → expect 422
+PATCH {{baseUrl}}/book-settlement/999999
+Authorization: Bearer {{login.response.body.token}}
+Content-Type: application/json
+
+{
+  "leaf_used_to": 3
+}

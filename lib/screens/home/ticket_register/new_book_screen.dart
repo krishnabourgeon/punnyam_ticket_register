@@ -1882,14 +1882,29 @@ class _NewBookScreenState extends State<NewBookScreen> {
   // ── Rows ─────────────────────────────────────────────────────────────────────
   final List<_BookRow> _rows = [];
 
+  // Leaves-per-book default from settings/book-register. When set, the
+  // "No of Leaves (per book)" field is pre-filled and locked; when null
+  // (not configured), the user enters it manually as before.
+  int? _defaultLeafsPerBook;
+
   @override
   void initState() {
     super.initState();
     _rows.add(_newRow());
-    CommonFunctions.afterInit(() {
+    CommonFunctions.afterInit(() async {
       final billingProvider = context.read<BillingProvider>();
       if (billingProvider.poojaDataList.isEmpty) {
         billingProvider.getPoojas();
+      }
+      final ticketProvider = context.read<TicketProvidetr>();
+      await ticketProvider.getBookRegisterSettings();
+      if (!mounted) return;
+      final defaultLeaves = ticketProvider.defaultLeafsPerBook;
+      setState(() => _defaultLeafsPerBook = defaultLeaves);
+      if (defaultLeaves != null) {
+        for (final row in _rows) {
+          row.leavesCtrl.text = '$defaultLeaves';
+        }
       }
     });
   }
@@ -1900,6 +1915,9 @@ class _NewBookScreenState extends State<NewBookScreen> {
     row.fromCtrl.addListener(() => _recalcBooks(row));
     row.toCtrl.addListener(() => _recalcBooks(row));
     row.leavesCtrl.addListener(() => _recalcBooks(row));
+    if (_defaultLeafsPerBook != null) {
+      row.leavesCtrl.text = '$_defaultLeafsPerBook';
+    }
     return row;
   }
 
@@ -2361,7 +2379,7 @@ class _NewBookScreenState extends State<NewBookScreen> {
   // ─── DATE FIELD ─────────────────────────────────────────────────────────────
   Widget _buildDateField(_BookRow row) {
     final dateStr =
-        '${row.date.month.toString().padLeft(2, '0')}/${row.date.day.toString().padLeft(2, '0')}/${row.date.year}';
+        '${row.date.day.toString().padLeft(2, '0')}/${row.date.month.toString().padLeft(2, '0')}/${row.date.year}';
     return InkWell(
       onTap: () => _pickDate(row),
       borderRadius: BorderRadius.circular(14),
@@ -2481,19 +2499,21 @@ class _NewBookScreenState extends State<NewBookScreen> {
     TextInputType keyboardType = TextInputType.text,
     List<TextInputFormatter>? inputFormatters,
     String? Function(String?)? validator,
+    bool readOnly = false,
   }) {
     return Container(
       decoration: BoxDecoration(
-        color: _cardBg,
+        color: readOnly ? const Color(0xFFF5F0EB) : _cardBg,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: _border, width: 1),
       ),
       child: TextFormField(
         controller: controller,
+        readOnly: readOnly,
         keyboardType: keyboardType,
         inputFormatters: inputFormatters,
         style: GoogleFonts.poppins(
-          color: _labelColor,
+          color: readOnly ? _hintColor : _labelColor,
           fontSize: 14.sp,
           fontWeight: FontWeight.w600,
         ),
@@ -2510,6 +2530,9 @@ class _NewBookScreenState extends State<NewBookScreen> {
               child: Icon(icon, color: _primary, size: 15),
             ),
           ),
+          suffixIcon: readOnly
+              ? Icon(Icons.lock_outline_rounded, color: _hintColor, size: 16)
+              : null,
           labelText: label,
           hintText: hint,
           labelStyle: GoogleFonts.poppins(
@@ -2533,8 +2556,9 @@ class _NewBookScreenState extends State<NewBookScreen> {
     );
   }
 
-  // ─── NO OF LEAVES FIELD (leaves per book, entered manually) ─────────────────
+  // ─── NO OF LEAVES FIELD (from settings/book-register when set, else manual) ─
   Widget _buildLeavesField(_BookRow row) {
+    final isLocked = _defaultLeafsPerBook != null;
     return _buildTextField(
       controller: row.leavesCtrl,
       label: 'No of Leaves (per book)',
@@ -2543,6 +2567,7 @@ class _NewBookScreenState extends State<NewBookScreen> {
       keyboardType: TextInputType.number,
       inputFormatters: [FilteringTextInputFormatter.digitsOnly],
       validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
+      readOnly: isLocked,
     );
   }
 
