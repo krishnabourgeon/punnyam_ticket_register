@@ -521,6 +521,9 @@ class ServiceConfig {
       "items": items,
     };
     Result res = await BaseClient.post("book-settlement", body: body);
+    if (kDebugMode) {
+      print("closeBook raw response: $body");
+    }
     if (res.isError) {
       ErrorResponseModel errorResponseModel =
           ErrorResponseModel(errorMessage: 'OOps...!, Something went wrong');

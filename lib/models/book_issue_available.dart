@@ -64,10 +64,6 @@
 //     };
 // }
 
-
-
-
-
 // To parse this JSON data, do
 //
 //     final bookIssueAvailable = bookIssueAvailableFromJson(jsonString);
@@ -112,7 +108,6 @@ class BookIssueAvailable {
       };
 }
 
-
 class BookIssueAvailableItem {
   final int? id;
   final int? bookId;
@@ -124,6 +119,7 @@ class BookIssueAvailableItem {
   final int counterId;
   final String? issueDate;
   final String? status;
+  final int? nextleaffrom;
 
   BookIssueAvailableItem({
     this.id,
@@ -136,6 +132,7 @@ class BookIssueAvailableItem {
     required this.counterId,
     this.issueDate,
     this.status,
+    this.nextleaffrom
   });
 
   // Total tickets issued in this book — used as the "Opening Ticket" value
@@ -148,18 +145,18 @@ class BookIssueAvailableItem {
     // the top-level fields with the same names are often null/absent.
     // Prefer the nested values, falling back to top-level/flatter shapes
     // in case a different endpoint variant returns this flat.
-    final book = json['book'] is Map ? json['book'] as Map<String, dynamic> : null;
-    final pooja = book?['pooja'] is Map ? book!['pooja'] as Map<String, dynamic> : null;
+    final book =
+        json['book'] is Map ? json['book'] as Map<String, dynamic> : null;
+    final pooja =
+        book?['pooja'] is Map ? book!['pooja'] as Map<String, dynamic> : null;
 
     return BookIssueAvailableItem(
       id: json['id'] as int?,
       bookId: (json['book_id'] ?? book?['id']) as int?,
       poojaId: (book?['pooja_id'] ?? pooja?['id'] ?? json['pooja_id']) as int?,
-      poojaName: (pooja?['name'] ??
-              json['pooja_name'] ??
-              json['vazhivad_item'] ??
-              '')
-          .toString(),
+      poojaName:
+          (pooja?['name'] ?? json['pooja_name'] ?? json['vazhivad_item'] ?? '')
+              .toString(),
       leafFrom:
           int.tryParse('${json['leaf_from'] ?? book?['leaf_from'] ?? 0}') ?? 0,
       leafTo: int.tryParse('${book?['leaf_to'] ?? json['leaf_to'] ?? 0}') ?? 0,
@@ -170,6 +167,7 @@ class BookIssueAvailableItem {
       counterId: int.tryParse('${json['counter_id'] ?? 0}') ?? 0,
       issueDate: json['issue_date']?.toString(),
       status: json['status']?.toString(),
+      nextleaffrom:int.tryParse('${json['next_leaf_from'] ?? 0}') ?? 0,
     );
   }
 
@@ -184,6 +182,7 @@ class BookIssueAvailableItem {
         'counter_id': counterId,
         'issue_date': issueDate,
         'status': status,
+        'next_leaf_from':nextleaffrom
       };
 }
 
